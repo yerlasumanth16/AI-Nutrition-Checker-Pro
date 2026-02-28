@@ -1,5 +1,5 @@
 {
   "name": "AI Nutrition Checker",
   "description": "A clinical nutrition analysis engine that provides detailed nutritional breakdowns and health scores for food items.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["camera"]
 }

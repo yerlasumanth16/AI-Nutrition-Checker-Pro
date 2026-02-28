@@ -5,6 +5,7 @@ export interface UserProfile {
   weight_kg: number;
   activity_level: 'sedentary' | 'light' | 'moderate' | 'active' | 'athlete';
   goal: 'fat_loss' | 'muscle_gain' | 'maintenance';
+  mood?: string;
 }
 
 export interface FoodAnalysis {
@@ -185,6 +186,90 @@ declare global {
 export interface VideoGenerationResult {
   videoUri: string;
   expiresAt: Date;
+}
+
+export interface StreakEngineResponse {
+  streak_status: string;
+  badge: string;
+  reward_points: number;
+  motivation_message: string;
+}
+
+export interface MoodMetabolicResponse {
+  emotional_analysis: string;
+  metabolic_risk: number;
+  recommended_foods: string[];
+  avoid_foods: string[];
+}
+
+export interface FutureBodyPredictionResponse {
+  predicted_weight_kg: number;
+  weight_change_kg: number;
+  confidence_score: number;
+  analysis: string;
+}
+
+export interface CheatMealOptimizerResponse {
+  compensation_strategy: {
+    day_1: string;
+    day_2: string;
+  };
+  metabolic_stability_notes: string;
+  protein_target_maintenance: string;
+}
+
+export interface CommunityLeaderboardResponse {
+  rank_percentile: number;
+  competitive_motivation: string;
+  improvement_strategy: string;
+}
+
+export interface SmartReminderResponse {
+  reminder_needed: boolean;
+  message: string;
+}
+
+export interface HealthWarningResponse {
+  sodium_risk: number;
+  sugar_risk: number;
+  fiber_adequacy: number;
+  overall_risk_score: number;
+  warning_severity: 'low' | 'medium' | 'high';
+  recommendations: string[];
+}
+
+export interface BodyTypeMacroResponse {
+  carb_ratio: number;
+  protein_ratio: number;
+  fat_ratio: number;
+  personalized_distribution_notes: string;
+}
+
+export interface OneTapMealPlanResponse {
+  breakfast: string;
+  lunch: string;
+  dinner: string;
+  snacks: string;
+  total_macros: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fats: number;
+  };
+}
+
+export interface PatternDetectionResponse {
+  identified_patterns: string[];
+  explanation: string;
+  correction_strategy: string;
+}
+
+export interface SmartGroceryResponse {
+  weekly_grocery_list: {
+    category: string;
+    items: { name: string; quantity: string }[];
+  }[];
+  budget_conscious_notes: string;
 }
 
 export interface NutritionAnalysisResponse {

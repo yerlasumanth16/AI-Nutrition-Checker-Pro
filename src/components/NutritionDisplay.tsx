@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
+import Markdown from 'react-markdown';
 import { NutritionAnalysisResponse } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { Activity, Heart, AlertTriangle, CheckCircle, Info, Flame, Scale, Brain, Zap, FileText, Printer, Loader2, Microscope, Play, Video as VideoIcon, ArrowRight } from 'lucide-react';
+import { Activity, Heart, AlertTriangle, CheckCircle, Info, Flame, Scale, Brain, Zap, FileText, Printer, Loader2, Microscope, Play, Video as VideoIcon, ArrowRight, Download, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PreventiveHealthDisplay } from './PreventiveHealthDisplay';
 import { generateAudioSummary } from '../services/ai';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface NutritionDisplayProps {
   data: NutritionAnalysisResponse;
@@ -100,6 +103,40 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
     }
   };
 
+  const handleDownloadPDF = async () => {
+    if (!downloadable_report?.print_ready_html) return;
+
+    // Create a temporary container to render the HTML
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.width = '800px'; // A4-ish width
+    container.innerHTML = downloadable_report.print_ready_html;
+    document.body.appendChild(container);
+
+    try {
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Nutrition_Report_${food_analysis.food_name.replace(/\s+/g, '_')}.pdf`);
+    } catch (error) {
+      console.error("PDF generation failed:", error);
+      alert("Failed to generate PDF. Please try the Print option.");
+    } finally {
+      document.body.removeChild(container);
+    }
+  };
+
   const macroData = [
     { name: 'Carbs', value: food_analysis.macronutrients?.carbohydrates_g || 0 },
     { name: 'Protein', value: food_analysis.macronutrients?.proteins_g || 0 },
@@ -146,13 +183,22 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
             )}
             
             {downloadable_report ? (
-              <button 
-                onClick={handlePrint}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-colors font-medium"
-              >
-                <Printer className="w-4 h-4" />
-                Print Report
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={handleDownloadPDF}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors font-medium"
+                >
+                  <Download className="w-4 h-4" />
+                  Download PDF
+                </button>
+                <button 
+                  onClick={handlePrint}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-colors font-medium"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print
+                </button>
+              </div>
             ) : (
               <button 
                 onClick={onGenerateReport}
@@ -180,6 +226,22 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
             </div>
           </div>
         </div>
+
+      {/* AI Summary Section */}
+      {food_analysis.analysis_summary && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6"
+        >
+          <div className="flex items-center gap-2 mb-4 text-emerald-600 font-bold text-sm uppercase tracking-wider">
+            <Sparkles className="w-4 h-4" /> AI Clinical Summary
+          </div>
+          <div className="markdown-body prose prose-slate max-w-none">
+            <Markdown>{food_analysis.analysis_summary}</Markdown>
+          </div>
+        </motion.div>
+      )}
 
         {/* AI Recommendations */}
         {ai_recommendations && ai_recommendations.length > 0 && (

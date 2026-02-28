@@ -73,6 +73,7 @@ When generating "print_ready_html":
 - Include header logo placeholder, footer with report ID
 - Use tables for nutritional breakdown
 - Add health score gauge (CSS styled)
+- Include a "PREVIOUS HISTORY ANALYSIS" section if history data is provided. Summarize the last few items analyzed, their health scores, and calories.
 - Include print media CSS (@media print { remove buttons, remove shadows, full width layout })
 - Color Theme: Primary #2E7D32, Secondary #66BB6A, Accent #FFA726, Danger #E53935
 
@@ -178,7 +179,7 @@ const NUTRITION_RESPONSE_SCHEMA = {
         nutrient_density_score: { type: Type.NUMBER },
         health_score: { type: Type.NUMBER },
         quality_index: { type: Type.NUMBER },
-        analysis_summary: { type: Type.STRING }
+        analysis_summary: { type: Type.STRING, description: "A precise summary in English with highlighting and key points (Markdown)." }
       },
       required: ["food_name", "serving_reference", "calories_kcal", "macronutrients", "micronutrients", "glycemic_index", "health_score", "quality_index"]
     },
@@ -491,6 +492,85 @@ function calculateMetabolicMetrics(profile: UserProfile) {
   return { bmr, tdee, activity_factor: factor };
 }
 
+const INTELLIGENCE_ENGINE_SYSTEM_INSTRUCTION = `
+You are an advanced AI Nutrition Intelligence Engine.
+You provide scientifically accurate, clinically aligned, and personalized nutrition analysis.
+All recommendations must be evidence-based and structured.
+
+🔷 OUTPUT FORMAT
+You must return a JSON object with a single field called "report" which contains a precise, professional summary in normal English (Markdown format).
+The report should use:
+- Clear headings (### Heading)
+- Key points (bullet points)
+- Bold text for emphasis
+- No JSON-like key-value pairs in the report text itself.
+
+Example:
+{
+  "report": "### Metabolic Summary\\nYour current metabolic rate is...",
+  "reward_points": 50,
+  "streak_status": "continued"
+}
+
+Avoid vague statements.
+Quantify wherever possible.
+Include risk scores from 0–100.
+Be practical and actionable.
+
+You support multiple modes:
+1. STREAK_ENGINE: Evaluate if streak continues, generate motivation, badge, and reward points.
+2. MOOD_METABOLIC: Analyze how current mood interacts with metabolic impact and suggest next meal.
+3. FUTURE_PREDICTION: Predict future weight based on energy balance.
+4. CHEAT_OPTIMIZER: Create compensation strategy for cheat meals.
+5. COMMUNITY_ANALYZER: Rank percentile and suggest improvement strategy.
+6. SMART_REMINDER: Data-driven reminders.
+7. HEALTH_WARNING: Compare intake with RDA and compute risk score.
+8. BODY_TYPE_MODE: Adjust macro distribution based on body type.
+9. MEAL_PLANNER: Generate daily meal plan.
+10. PATTERN_DETECTION: Identify eating patterns and suggest correction.
+11. GROCERY_GENERATOR: Generate weekly grocery list.
+
+Return STRICT JSON only.
+No markdown outside the "report" field.
+No commentary outside JSON.
+`;
+
+export async function runIntelligenceEngine(
+  mode: string,
+  data: any,
+  userProfile: UserProfile
+): Promise<any> {
+  try {
+    const metabolicMetrics = calculateMetabolicMetrics(userProfile);
+    const inputPayload = JSON.stringify({
+      mode,
+      data,
+      user_profile: { ...userProfile, ...metabolicMetrics },
+      timestamp: new Date().toISOString()
+    });
+
+    const ai = getAI();
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: inputPayload,
+      config: {
+        systemInstruction: INTELLIGENCE_ENGINE_SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+      },
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("No response from AI");
+    }
+
+    return JSON.parse(text);
+  } catch (error) {
+    handleAIError(error);
+  }
+}
+
 export async function analyzePreventiveHealth(
   foodData: any,
   userProfile: UserProfile
@@ -543,17 +623,27 @@ export async function analyzeFood(
   foodQuery: string, 
   userProfile: UserProfile,
   mode: string = 'single_food',
-  downloadReport: boolean = false
+  downloadReport: boolean = false,
+  history: NutritionAnalysisResponse[] = [],
+  imageData?: string
 ): Promise<NutritionAnalysisResponse> {
   try {
     const sanitizedQuery = sanitizeInput(foodQuery);
     const metabolicMetrics = calculateMetabolicMetrics(userProfile);
     
+    const historySummary = history.length > 0 ? history.map(h => ({
+      food: h.food_analysis.food_name,
+      calories: h.food_analysis.calories_kcal,
+      health_score: h.food_analysis.health_score,
+      date: new Date().toLocaleDateString() // Placeholder for date
+    })) : null;
+
     const inputPayload = JSON.stringify({
-      food_query: sanitizedQuery,
+      food_query: sanitizedQuery || (imageData ? "Analyze this food image" : ""),
       user_profile: { ...userProfile, ...metabolicMetrics },
-      mode: mode,
-      download_report: downloadReport
+      mode: imageData ? 'image_analysis' : mode,
+      download_report: downloadReport,
+      history: historySummary
     });
 
     const ai = getAI();
@@ -561,9 +651,21 @@ export async function analyzeFood(
       ? SYSTEM_INSTRUCTION 
       : SYSTEM_INSTRUCTION.split('🔷 REPORT GENERATION RULES')[0] + "\nDo NOT generate any HTML or print-ready reports.";
 
+    const contents: any = { parts: [{ text: inputPayload }] };
+    
+    if (imageData) {
+      const base64Data = imageData.split(',')[1] || imageData;
+      contents.parts.push({
+        inlineData: {
+          mimeType: "image/jpeg",
+          data: base64Data
+        }
+      });
+    }
+
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: inputPayload,
+      contents: contents,
       config: {
         systemInstruction: systemInstruction,
         responseMimeType: "application/json",
