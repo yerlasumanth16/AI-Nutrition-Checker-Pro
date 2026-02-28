@@ -158,6 +158,40 @@ If sodium high + potassium low → Cardiovascular risk increases
 Clamp final value between 0 and 100.
 `;
 
+function handleAIError(error: any): never {
+  console.error("AI Service Error:", error);
+  
+  const message = error?.message || String(error);
+  const status = error?.status || error?.statusCode || (message.match(/\b\d{3}\b/) ? parseInt(message.match(/\b\d{3}\b/)[0]) : null);
+  
+  // 429: Quota / Rate Limit
+  if (status === 429 || message.includes("429") || message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit")) {
+    throw new Error("API quota exceeded. Please wait a moment before trying again, or check your API plan limits.");
+  }
+  
+  // 401/403: Authentication / API Key
+  if (status === 401 || status === 403 || message.includes("401") || message.includes("403") || message.toLowerCase().includes("api key") || message.toLowerCase().includes("unauthorized") || message.toLowerCase().includes("forbidden")) {
+    throw new Error("Authentication failed. Please verify that your API key is valid and has the necessary permissions.");
+  }
+
+  // Safety / Content Blocked
+  if (message.toLowerCase().includes("safety") || message.toLowerCase().includes("blocked") || message.toLowerCase().includes("candidate was blocked")) {
+    throw new Error("The request was filtered for safety reasons. Please try a different food description or query.");
+  }
+
+  // 5xx: Server Errors
+  if ((status && status >= 500) || message.includes("500") || message.includes("503") || message.toLowerCase().includes("unavailable") || message.toLowerCase().includes("overloaded")) {
+    throw new Error("The AI service is currently overloaded or unavailable. Please try again in a few seconds.");
+  }
+
+  // Network Errors
+  if (message.toLowerCase().includes("fetch") || message.toLowerCase().includes("network") || message.toLowerCase().includes("offline")) {
+    throw new Error("Network error detected. Please check your internet connection and try again.");
+  }
+
+  throw new Error("We encountered an issue while analyzing your request. Please try again with a more specific food name.");
+}
+
 export async function analyzePreventiveHealth(
   foodData: any,
   userProfile: UserProfile
@@ -194,8 +228,7 @@ export async function analyzePreventiveHealth(
 
     return JSON.parse(text);
   } catch (error) {
-    console.error("Error analyzing preventive health:", error);
-    throw error;
+    handleAIError(error);
   }
 }
 
@@ -230,8 +263,7 @@ export async function analyzeFood(
 
     return JSON.parse(text) as NutritionAnalysisResponse;
   } catch (error) {
-    console.error("Error analyzing food:", error);
-    throw error;
+    handleAIError(error);
   }
 }
 
@@ -269,8 +301,7 @@ export async function generateAudioSummary(text: string): Promise<string> {
     }
     return window.btoa(binary);
   } catch (error) {
-    console.error("Error generating audio:", error);
-    throw error;
+    handleAIError(error);
   }
 }
 
@@ -324,7 +355,11 @@ export async function quickScanFood(foodName: string): Promise<any> {
     });
     return JSON.parse(response.text || "{}");
   } catch (error) {
-    console.error("Quick scan error:", error);
+    try {
+      handleAIError(error);
+    } catch (e: any) {
+      console.error("Quick scan error:", e.message);
+    }
     return null;
   }
 }
