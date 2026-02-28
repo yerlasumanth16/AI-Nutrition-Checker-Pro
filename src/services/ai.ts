@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality, Type } from "@google/genai";
+import { GoogleGenAI, Modality, Type, ThinkingLevel } from "@google/genai";
 import { NutritionAnalysisResponse, UserProfile } from "../types";
 
 // Helper to get AI instance
@@ -45,19 +45,9 @@ The user input will include:
 "download_report": boolean
 }
 
-🔷 CORE SCIENTIFIC CALCULATIONS (Internal Reasoning)
-1️⃣ Calculate BMR using:
-Male: BMR = 10W + 6.25H − 5A + 5
-Female: BMR = 10W + 6.25H − 5A − 161
-
-2️⃣ Multiply by activity factor:
-Sedentary: 1.2
-Light: 1.375
-Moderate: 1.55
-Active: 1.725
-Athlete: 1.9
-
-3️⃣ Compare food calories with user’s daily need.
+🔷 CORE SCIENTIFIC CALCULATIONS
+1️⃣ Use the provided BMR and TDEE from the user_profile.
+2️⃣ Compare food calories with the user's TDEE.
 
 4️⃣ Health Score Logic (0–100):
 High protein density → increase
@@ -116,14 +106,8 @@ Return STRICT JSON only.
 No markdown.
 No commentary outside JSON.
 
-CORE CALCULATIONS (INTERNAL LOGIC)
-1️⃣ Basal Metabolic Rate
-Male: BMR = 10W + 6.25H − 5A + 5
-Female: BMR = 10W + 6.25H − 5A − 161
-
-2️⃣ Total Daily Energy Expenditure
-TDEE = BMR × Activity Factor
-Sedentary 1.2, Light 1.375, Moderate 1.55, Active 1.725, Athlete 1.9
+CORE CALCULATIONS
+1️⃣ Use the provided BMR and TDEE from the user_profile.
 
 3️⃣ Glycemic Load
 GL = (Glycemic Index × Carbohydrates per serving) / 100
@@ -158,38 +142,353 @@ If sodium high + potassium low → Cardiovascular risk increases
 Clamp final value between 0 and 100.
 `;
 
+const NUTRITION_RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    food_analysis: {
+      type: Type.OBJECT,
+      properties: {
+        food_name: { type: Type.STRING },
+        serving_reference: { type: Type.STRING },
+        calories_kcal: { type: Type.NUMBER },
+        macronutrients: {
+          type: Type.OBJECT,
+          properties: {
+            carbohydrates_g: { type: Type.NUMBER },
+            proteins_g: { type: Type.NUMBER },
+            fats_g: { type: Type.NUMBER },
+            fiber_g: { type: Type.NUMBER },
+            sugars_g: { type: Type.NUMBER }
+          },
+          required: ["carbohydrates_g", "proteins_g", "fats_g", "fiber_g", "sugars_g"]
+        },
+        micronutrients: {
+          type: Type.OBJECT,
+          properties: {
+            calcium_mg: { type: Type.NUMBER },
+            iron_mg: { type: Type.NUMBER },
+            potassium_mg: { type: Type.NUMBER },
+            magnesium_mg: { type: Type.NUMBER },
+            vitamin_c_mg: { type: Type.NUMBER },
+            vitamin_b12_mcg: { type: Type.NUMBER }
+          },
+          required: ["calcium_mg", "iron_mg", "potassium_mg", "magnesium_mg", "vitamin_c_mg", "vitamin_b12_mcg"]
+        },
+        glycemic_index: { type: Type.NUMBER },
+        nutrient_density_score: { type: Type.NUMBER },
+        health_score: { type: Type.NUMBER },
+        quality_index: { type: Type.NUMBER },
+        analysis_summary: { type: Type.STRING }
+      },
+      required: ["food_name", "serving_reference", "calories_kcal", "macronutrients", "micronutrients", "glycemic_index", "health_score", "quality_index"]
+    },
+    personalized_impact: {
+      type: Type.OBJECT,
+      properties: {
+        daily_calorie_requirement: { type: Type.NUMBER },
+        percentage_of_daily_calories: { type: Type.NUMBER },
+        goal_alignment: { type: Type.STRING, description: "Good, Moderate, or Poor" },
+        recommended_adjustment: { type: Type.STRING }
+      },
+      required: ["daily_calorie_requirement", "percentage_of_daily_calories", "goal_alignment", "recommended_adjustment"]
+    },
+    risk_prediction: {
+      type: Type.OBJECT,
+      properties: {
+        diabetes_risk: { type: Type.STRING, description: "Low, Moderate, or High" },
+        cardiovascular_risk: { type: Type.STRING, description: "Low, Moderate, or High" },
+        obesity_risk: { type: Type.STRING, description: "Low, Moderate, or High" }
+      },
+      required: ["diabetes_risk", "cardiovascular_risk", "obesity_risk"]
+    },
+    gut_health_analysis: {
+      type: Type.OBJECT,
+      properties: {
+        prebiotic_score: { type: Type.NUMBER },
+        digestive_friendliness: { type: Type.STRING, description: "Good, Moderate, or Poor" },
+        inflammation_risk: { type: Type.STRING, description: "Low, Moderate, or High" }
+      },
+      required: ["prebiotic_score", "digestive_friendliness", "inflammation_risk"]
+    },
+    food_compatibility: {
+      type: Type.OBJECT,
+      properties: {
+        compatible_with: { type: Type.ARRAY, items: { type: Type.STRING } },
+        avoid_combining_with: { type: Type.ARRAY, items: { type: Type.STRING } },
+        reasoning: { type: Type.STRING }
+      },
+      required: ["compatible_with", "avoid_combining_with", "reasoning"]
+    },
+    ai_recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
+    ui_metadata: {
+      type: Type.OBJECT,
+      properties: {
+        theme_palette: {
+          type: Type.OBJECT,
+          properties: {
+            primary_color: { type: Type.STRING },
+            secondary_color: { type: Type.STRING },
+            accent_color: { type: Type.STRING },
+            background_gradient: { type: Type.STRING }
+          }
+        },
+        recommended_visuals: { type: Type.ARRAY, items: { type: Type.STRING } },
+        icon_style: { type: Type.STRING },
+        font_style: { type: Type.STRING }
+      }
+    },
+    downloadable_report: {
+      type: Type.OBJECT,
+      properties: {
+        report_id: { type: Type.STRING },
+        report_title: { type: Type.STRING },
+        generated_on: { type: Type.STRING },
+        report_summary: { type: Type.STRING },
+        detailed_sections: {
+          type: Type.OBJECT,
+          properties: {
+            user_profile_summary: { type: Type.STRING },
+            metabolic_analysis: { type: Type.STRING },
+            food_nutritional_breakdown: { type: Type.STRING },
+            risk_assessment: { type: Type.STRING },
+            gut_health_analysis: { type: Type.STRING },
+            goal_alignment_analysis: { type: Type.STRING },
+            recommendations: { type: Type.STRING }
+          }
+        },
+        print_ready_html: { type: Type.STRING }
+      }
+    }
+  },
+  required: ["food_analysis", "personalized_impact", "risk_prediction", "gut_health_analysis", "food_compatibility", "ai_recommendations", "ui_metadata"]
+};
+
+const PREVENTIVE_HEALTH_RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    metabolic_health_report: {
+      type: Type.OBJECT,
+      properties: {
+        bmr: { type: Type.NUMBER },
+        tdee: { type: Type.NUMBER },
+        metabolic_efficiency_score: { type: Type.NUMBER },
+        calorie_balance_status: { type: Type.STRING, description: "Deficit, Surplus, or Maintenance" }
+      },
+      required: ["bmr", "tdee", "metabolic_efficiency_score", "calorie_balance_status"]
+    },
+    glycemic_and_insulin_report: {
+      type: Type.OBJECT,
+      properties: {
+        glycemic_index: { type: Type.NUMBER },
+        glycemic_load: { type: Type.NUMBER },
+        classification: { type: Type.STRING, description: "Low, Moderate, or High" },
+        insulin_spike_probability: { type: Type.STRING, description: "Low, Moderate, or High" }
+      },
+      required: ["glycemic_index", "glycemic_load", "classification", "insulin_spike_probability"]
+    },
+    cardiovascular_risk_report: {
+      type: Type.OBJECT,
+      properties: {
+        heart_health_index: { type: Type.NUMBER },
+        sodium_risk: { type: Type.STRING, description: "Low, Moderate, or High" },
+        saturated_fat_risk: { type: Type.STRING, description: "Low, Moderate, or High" },
+        overall_cardiovascular_risk: { type: Type.STRING, description: "Low, Moderate, or High" }
+      },
+      required: ["heart_health_index", "sodium_risk", "saturated_fat_risk", "overall_cardiovascular_risk"]
+    },
+    cognitive_nutrition_report: {
+      type: Type.OBJECT,
+      properties: {
+        brain_support_score: { type: Type.NUMBER },
+        omega3_support: { type: Type.STRING, description: "Low, Moderate, or High" },
+        b12_support: { type: Type.STRING, description: "Low, Moderate, or High" },
+        mental_energy_rating: { type: Type.NUMBER }
+      },
+      required: ["brain_support_score", "omega3_support", "b12_support", "mental_energy_rating"]
+    },
+    gut_microbiome_report: {
+      type: Type.OBJECT,
+      properties: {
+        prebiotic_score: { type: Type.NUMBER },
+        digestive_friendliness: { type: Type.STRING, description: "Good, Moderate, or Poor" },
+        inflammation_risk: { type: Type.STRING, description: "Low, Moderate, or High" }
+      },
+      required: ["prebiotic_score", "digestive_friendliness", "inflammation_risk"]
+    },
+    nutrient_deficiency_projection: {
+      type: Type.OBJECT,
+      properties: {
+        iron_deficiency_risk: { type: Type.STRING, description: "Low, Moderate, or High" },
+        b12_deficiency_risk: { type: Type.STRING, description: "Low, Moderate, or High" },
+        calcium_deficiency_risk: { type: Type.STRING, description: "Low, Moderate, or High" },
+        protein_deficiency_risk: { type: Type.STRING, description: "Low, Moderate, or High" }
+      },
+      required: ["iron_deficiency_risk", "b12_deficiency_risk", "calcium_deficiency_risk", "protein_deficiency_risk"]
+    },
+    body_composition_projection: {
+      type: Type.OBJECT,
+      properties: {
+        weekly_weight_change_estimate_kg: { type: Type.NUMBER },
+        lean_mass_gain_potential: { type: Type.STRING, description: "Low, Moderate, or High" },
+        fat_storage_probability: { type: Type.STRING, description: "Low, Moderate, or High" }
+      },
+      required: ["weekly_weight_change_estimate_kg", "lean_mass_gain_potential", "fat_storage_probability"]
+    },
+    preventive_health_summary: {
+      type: Type.OBJECT,
+      properties: {
+        overall_health_score: { type: Type.NUMBER },
+        top_strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+        top_risks: { type: Type.ARRAY, items: { type: Type.STRING } },
+        priority_recommendations: { type: Type.ARRAY, items: { type: Type.STRING } }
+      },
+      required: ["overall_health_score", "top_strengths", "top_risks", "priority_recommendations"]
+    },
+    genetic_sensitivity_simulation: {
+      type: Type.OBJECT,
+      properties: {
+        caffeine_metabolism_assumption: { type: Type.STRING, description: "Fast or Slow" },
+        carb_sensitivity_assumption: { type: Type.STRING, description: "Low, Moderate, or High" },
+        fat_sensitivity_assumption: { type: Type.STRING, description: "Low, Moderate, or High" },
+        personalized_note: { type: Type.STRING }
+      },
+      required: ["caffeine_metabolism_assumption", "carb_sensitivity_assumption", "fat_sensitivity_assumption", "personalized_note"]
+    },
+    long_term_diet_trend_analysis: {
+      type: Type.OBJECT,
+      properties: {
+        diabetes_risk_trend: { type: Type.STRING, description: "Stable, Increasing, or Decreasing" },
+        cardiovascular_risk_trend: { type: Type.STRING, description: "Stable, Increasing, or Decreasing" },
+        metabolic_stability_trend: { type: Type.STRING, description: "Stable, Improving, or Declining" }
+      },
+      required: ["diabetes_risk_trend", "cardiovascular_risk_trend", "metabolic_stability_trend"]
+    },
+    hormonal_balance_support_report: {
+      type: Type.OBJECT,
+      properties: {
+        thyroid_support: { type: Type.STRING, description: "Low, Moderate, or High" },
+        testosterone_or_estrogen_support: { type: Type.STRING, description: "Low, Moderate, or High" },
+        cortisol_balance_support: { type: Type.STRING, description: "Low, Moderate, or High" }
+      },
+      required: ["thyroid_support", "testosterone_or_estrogen_support", "cortisol_balance_support"]
+    },
+    skin_health_report: {
+      type: Type.OBJECT,
+      properties: {
+        skin_glow_percentage: { type: Type.NUMBER },
+        collagen_support_rating: { type: Type.STRING, description: "Low, Moderate, or High" },
+        hydration_support_rating: { type: Type.STRING, description: "Low, Moderate, or High" },
+        anti_aging_support_score: { type: Type.NUMBER },
+        acne_risk_impact: { type: Type.STRING, description: "Increase, Neutral, or Decrease" },
+        glycation_risk_level: { type: Type.STRING, description: "Low, Moderate, or High" },
+        dermatological_summary: { type: Type.STRING }
+      },
+      required: ["skin_glow_percentage", "collagen_support_rating", "hydration_support_rating", "anti_aging_support_score", "acne_risk_impact", "glycation_risk_level", "dermatological_summary"]
+    },
+    six_month_impact_simulation: {
+      type: Type.OBJECT,
+      properties: {
+        projected_weight_change_kg: { type: Type.NUMBER },
+        projected_diabetes_risk_change: { type: Type.STRING, description: "Increase, Stable, or Decrease" },
+        projected_heart_risk_change: { type: Type.STRING, description: "Increase, Stable, or Decrease" }
+      },
+      required: ["projected_weight_change_kg", "projected_diabetes_risk_change", "projected_heart_risk_change"]
+    },
+    medical_disclaimer: { type: Type.STRING }
+  },
+  required: ["metabolic_health_report", "glycemic_and_insulin_report", "cardiovascular_risk_report", "cognitive_nutrition_report", "gut_microbiome_report", "nutrient_deficiency_projection", "body_composition_projection", "preventive_health_summary", "genetic_sensitivity_simulation", "long_term_diet_trend_analysis", "hormonal_balance_support_report", "skin_health_report", "six_month_impact_simulation", "medical_disclaimer"]
+};
+
 function handleAIError(error: any): never {
-  console.error("AI Service Error:", error);
-  
   const message = error?.message || String(error);
-  const status = error?.status || error?.statusCode || (message.match(/\b\d{3}\b/) ? parseInt(message.match(/\b\d{3}\b/)[0]) : null);
+  const statusMatch = message.match(/\b\d{3}\b/);
+  const status = error?.status || error?.statusCode || (statusMatch ? parseInt(statusMatch[0]) : null);
+
+  console.error("AI Service Error Details:", {
+    message,
+    status,
+    originalError: error
+  });
   
   // 429: Quota / Rate Limit
-  if (status === 429 || message.includes("429") || message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit")) {
-    throw new Error("API quota exceeded. Please wait a moment before trying again, or check your API plan limits.");
+  if (status === 429 || message.includes("429") || message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit") || message.toLowerCase().includes("exhausted")) {
+    throw new Error("The AI service is currently busy or you've reached the usage limit. Please wait about 60 seconds and try again. This is common with free-tier API keys during peak times.");
   }
   
   // 401/403: Authentication / API Key
-  if (status === 401 || status === 403 || message.includes("401") || message.includes("403") || message.toLowerCase().includes("api key") || message.toLowerCase().includes("unauthorized") || message.toLowerCase().includes("forbidden")) {
-    throw new Error("Authentication failed. Please verify that your API key is valid and has the necessary permissions.");
+  if (status === 401 || status === 403 || message.includes("401") || message.includes("403") || message.toLowerCase().includes("api key") || message.toLowerCase().includes("unauthorized") || message.toLowerCase().includes("forbidden") || message.toLowerCase().includes("invalid_argument")) {
+    throw new Error("Connection failed: The API key appears to be missing or invalid. Please ensure GEMINI_API_KEY is correctly set in your environment variables.");
   }
 
   // Safety / Content Blocked
-  if (message.toLowerCase().includes("safety") || message.toLowerCase().includes("blocked") || message.toLowerCase().includes("candidate was blocked")) {
-    throw new Error("The request was filtered for safety reasons. Please try a different food description or query.");
+  if (message.toLowerCase().includes("safety") || message.toLowerCase().includes("blocked") || message.toLowerCase().includes("candidate was blocked") || message.toLowerCase().includes("finish_reason_safety")) {
+    throw new Error("Analysis Blocked: The AI safety filters flagged this query. This usually happens if the input is ambiguous or contains sensitive medical terms. Please try a simpler food name.");
   }
 
   // 5xx: Server Errors
   if ((status && status >= 500) || message.includes("500") || message.includes("503") || message.toLowerCase().includes("unavailable") || message.toLowerCase().includes("overloaded")) {
-    throw new Error("The AI service is currently overloaded or unavailable. Please try again in a few seconds.");
+    throw new Error("The AI provider is currently experiencing high load or technical difficulties. Please try again in a few moments.");
   }
 
   // Network Errors
-  if (message.toLowerCase().includes("fetch") || message.toLowerCase().includes("network") || message.toLowerCase().includes("offline")) {
-    throw new Error("Network error detected. Please check your internet connection and try again.");
+  if (message.toLowerCase().includes("fetch") || message.toLowerCase().includes("network") || message.toLowerCase().includes("offline") || message.toLowerCase().includes("failed to execute 'fetch'")) {
+    throw new Error("Connection Error: Unable to reach the AI service. Please check your internet connection and ensure no firewall is blocking the request.");
   }
 
-  throw new Error("We encountered an issue while analyzing your request. Please try again with a more specific food name.");
+  // JSON Parsing Errors
+  if (error instanceof SyntaxError || message.toLowerCase().includes("json") || message.toLowerCase().includes("unexpected token") || message.toLowerCase().includes("parse")) {
+    throw new Error("Data Error: The AI returned an unreadable response. This can happen if the model's output was cut short. Please try your request again.");
+  }
+
+  throw new Error("We couldn't process that request. Please try again with a more specific food name or description.");
+}
+
+function sanitizeInput(input: string): string {
+  // Remove any potential script tags or HTML
+  let sanitized = input.replace(/<[^>]*>?/gm, '');
+  
+  // Basic check for common prompt injection patterns
+  const injectionPatterns = [
+    "ignore all previous instructions",
+    "forget everything you were told",
+    "system instruction",
+    "act as",
+    "you are now",
+    "reveal your prompt"
+  ];
+  
+  for (const pattern of injectionPatterns) {
+    if (sanitized.toLowerCase().includes(pattern)) {
+      throw new Error("Security Alert: Potential prompt manipulation detected. Please use a standard food query.");
+    }
+  }
+  
+  return sanitized.trim();
+}
+
+function calculateMetabolicMetrics(profile: UserProfile) {
+  const { age, gender, height_cm, weight_kg, activity_level } = profile;
+  
+  // BMR Calculation
+  let bmr = 0;
+  if (gender === 'male') {
+    bmr = 10 * weight_kg + 6.25 * height_cm - 5 * age + 5;
+  } else {
+    bmr = 10 * weight_kg + 6.25 * height_cm - 5 * age - 161;
+  }
+
+  // Activity Factor
+  const activityFactors: Record<string, number> = {
+    sedentary: 1.2,
+    light: 1.375,
+    moderate: 1.55,
+    active: 1.725,
+    athlete: 1.9
+  };
+  const factor = activityFactors[activity_level] || 1.2;
+  const tdee = bmr * factor;
+
+  return { bmr, tdee, activity_factor: factor };
 }
 
 export async function analyzePreventiveHealth(
@@ -197,6 +496,7 @@ export async function analyzePreventiveHealth(
   userProfile: UserProfile
 ): Promise<any> {
   try {
+    const metabolicMetrics = calculateMetabolicMetrics(userProfile);
     const dietHistorySummary = {
       avg_daily_calories: 2000,
       avg_daily_protein: 70,
@@ -207,7 +507,7 @@ export async function analyzePreventiveHealth(
 
     const inputPayload = JSON.stringify({
       food_data: foodData,
-      user_profile: userProfile,
+      user_profile: { ...userProfile, ...metabolicMetrics },
       diet_history_summary: dietHistorySummary
     });
 
@@ -218,6 +518,8 @@ export async function analyzePreventiveHealth(
       config: {
         systemInstruction: PREVENTIVE_HEALTH_SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
+        responseSchema: PREVENTIVE_HEALTH_RESPONSE_SCHEMA,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       },
     });
 
@@ -226,7 +528,12 @@ export async function analyzePreventiveHealth(
       throw new Error("No response from AI");
     }
 
-    return JSON.parse(text);
+    const result = JSON.parse(text);
+    if (!result || typeof result !== 'object') {
+      throw new Error("Data Error: The AI returned an invalid response format.");
+    }
+
+    return result;
   } catch (error) {
     handleAIError(error);
   }
@@ -239,20 +546,29 @@ export async function analyzeFood(
   downloadReport: boolean = false
 ): Promise<NutritionAnalysisResponse> {
   try {
+    const sanitizedQuery = sanitizeInput(foodQuery);
+    const metabolicMetrics = calculateMetabolicMetrics(userProfile);
+    
     const inputPayload = JSON.stringify({
-      food_query: foodQuery,
-      user_profile: userProfile,
+      food_query: sanitizedQuery,
+      user_profile: { ...userProfile, ...metabolicMetrics },
       mode: mode,
       download_report: downloadReport
     });
 
     const ai = getAI();
+    const systemInstruction = downloadReport 
+      ? SYSTEM_INSTRUCTION 
+      : SYSTEM_INSTRUCTION.split('🔷 REPORT GENERATION RULES')[0] + "\nDo NOT generate any HTML or print-ready reports.";
+
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: inputPayload,
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction: systemInstruction,
         responseMimeType: "application/json",
+        responseSchema: NUTRITION_RESPONSE_SCHEMA,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       },
     });
 
@@ -261,7 +577,12 @@ export async function analyzeFood(
       throw new Error("No response from AI");
     }
 
-    return JSON.parse(text) as NutritionAnalysisResponse;
+    const result = JSON.parse(text);
+    if (!result || typeof result !== 'object') {
+      throw new Error("Data Error: The AI returned an invalid response format.");
+    }
+
+    return result as NutritionAnalysisResponse;
   } catch (error) {
     handleAIError(error);
   }
@@ -344,16 +665,23 @@ function addWavHeader(pcmData: Uint8Array, sampleRate: number): Uint8Array {
 
 export async function quickScanFood(foodName: string): Promise<any> {
   try {
+    const sanitizedName = sanitizeInput(foodName);
     const ai = getAI();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Quickly estimate calories and main macros for: ${foodName}. Return JSON: {calories, carbs, protein, fat}.`,
+      contents: `Quickly estimate calories and main macros for: ${sanitizedName}. Return JSON: {calories, carbs, protein, fat}.`,
       config: {
         systemInstruction: "You are a nutrition assistant. Return JSON only.",
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       },
     });
-    return JSON.parse(response.text || "{}");
+    const text = response.text;
+    const result = JSON.parse(text || "{}");
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+    return result;
   } catch (error) {
     try {
       handleAIError(error);

@@ -180,12 +180,12 @@ export function PreventiveHealthDisplay({ data }: PreventiveHealthDisplayProps) 
                     strokeWidth="8"
                     fill="transparent"
                     strokeDasharray={251.2}
-                    strokeDashoffset={251.2 - (251.2 * data.skin_health_report.skin_glow_percentage) / 100}
+                    strokeDashoffset={251.2 - (251.2 * (data.skin_health_report.skin_glow_percentage || 0)) / 100}
                     className="text-pink-500"
                   />
                 </svg>
                 <div className="absolute flex flex-col items-center">
-                  <span className="text-2xl font-bold text-pink-600">{data.skin_health_report.skin_glow_percentage}%</span>
+                  <span className="text-2xl font-bold text-pink-600">{data.skin_health_report.skin_glow_percentage || 0}%</span>
                   <span className="text-xs text-pink-400 font-medium">GLOW</span>
                 </div>
               </div>

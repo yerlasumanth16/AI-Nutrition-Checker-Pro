@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { NutritionAnalysisResponse } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { Activity, Heart, AlertTriangle, CheckCircle, Info, Flame, Scale, Brain, Zap, FileText, Printer, Loader2, Microscope, Play, Video as VideoIcon } from 'lucide-react';
+import { Activity, Heart, AlertTriangle, CheckCircle, Info, Flame, Scale, Brain, Zap, FileText, Printer, Loader2, Microscope, Play, Video as VideoIcon, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PreventiveHealthDisplay } from './PreventiveHealthDisplay';
 import { generateAudioSummary } from '../services/ai';
@@ -46,6 +46,16 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
     }
   };
 
+  if (!data || (!data.food_analysis && !data.error)) {
+    return (
+      <div className="p-8 bg-white rounded-2xl shadow-sm border border-slate-100 text-center">
+        <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+        <h3 className="text-lg font-semibold text-slate-900 mb-2">Analysis Incomplete</h3>
+        <p className="text-slate-500">The AI returned an incomplete response. This can happen with complex queries. Please try again with a simpler food name.</p>
+      </div>
+    );
+  }
+
   if (data.error) {
     return (
       <div className="p-6 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center gap-3">
@@ -55,7 +65,26 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
     );
   }
 
-  const { food_analysis, personalized_impact, risk_prediction, gut_health_analysis, food_compatibility, ai_recommendations, downloadable_report, preventive_health_data } = data;
+  const { 
+    food_analysis, 
+    personalized_impact, 
+    risk_prediction, 
+    gut_health_analysis, 
+    food_compatibility, 
+    ai_recommendations = [], 
+    downloadable_report, 
+    preventive_health_data 
+  } = data;
+
+  if (!food_analysis) {
+    return (
+      <div className="p-8 bg-white rounded-2xl shadow-sm border border-slate-100 text-center">
+        <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+        <h3 className="text-lg font-semibold text-slate-900 mb-2">Analysis Incomplete</h3>
+        <p className="text-slate-500">The AI was unable to generate a complete nutritional profile for this item. Please try a more specific food name.</p>
+      </div>
+    );
+  }
 
   const handlePrint = () => {
     if (downloadable_report?.print_ready_html) {
@@ -72,9 +101,9 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
   };
 
   const macroData = [
-    { name: 'Carbs', value: food_analysis.macronutrients.carbohydrates_g },
-    { name: 'Protein', value: food_analysis.macronutrients.proteins_g },
-    { name: 'Fats', value: food_analysis.macronutrients.fats_g },
+    { name: 'Carbs', value: food_analysis.macronutrients?.carbohydrates_g || 0 },
+    { name: 'Protein', value: food_analysis.macronutrients?.proteins_g || 0 },
+    { name: 'Fats', value: food_analysis.macronutrients?.fats_g || 0 },
   ];
 
   const getRiskColor = (level: string) => {
@@ -137,30 +166,38 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
             <div className="h-8 w-px bg-slate-200 hidden md:block"></div>
             <div className="flex flex-col items-end">
               <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Quality Index</span>
-              <span className="text-2xl font-bold text-slate-900">{food_analysis.quality_index.toFixed(1)}</span>
+              <span className="text-2xl font-bold text-slate-900">{(food_analysis.quality_index || 0).toFixed(1)}</span>
             </div>
             <div className="h-12 w-px bg-slate-200"></div>
             <div className="flex flex-col items-end">
               <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Health Score</span>
               <span className={`text-4xl font-bold ${
-                food_analysis.health_score >= 80 ? 'text-emerald-500' :
-                food_analysis.health_score >= 50 ? 'text-amber-500' : 'text-red-500'
+                (food_analysis.health_score || 0) >= 80 ? 'text-emerald-500' :
+                (food_analysis.health_score || 0) >= 50 ? 'text-amber-500' : 'text-red-500'
               }`}>
-                {food_analysis.health_score}
+                {food_analysis.health_score || 0}
               </span>
             </div>
           </div>
         </div>
 
         {/* AI Recommendations */}
-        <div className="mt-6 space-y-2">
-          {ai_recommendations.map((rec, idx) => (
-            <div key={idx} className="flex items-start gap-2 text-sm text-slate-600">
-              <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-              <span>{rec}</span>
-            </div>
-          ))}
-        </div>
+        {ai_recommendations && ai_recommendations.length > 0 && (
+          <div className="mt-6 space-y-1">
+            {ai_recommendations.map((rec, idx) => (
+              <div key={idx} className="group flex items-start gap-2 text-sm text-slate-600 hover:bg-slate-50 p-1.5 rounded-xl transition-all border border-transparent hover:border-slate-100">
+                <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                <span className="flex-1 leading-relaxed">{rec}</span>
+                <button 
+                  className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 bg-white text-blue-600 text-[10px] font-bold uppercase tracking-wider rounded-md border border-blue-100 hover:bg-blue-50 transition-all shadow-sm"
+                  onClick={() => alert(`This feature would provide deep-dive research or actionable steps for: "${rec}"`)}
+                >
+                  Details <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -192,15 +229,15 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
           </div>
           <div className="grid grid-cols-3 gap-2 mt-4 text-center text-sm">
             <div className="p-2 bg-blue-50 rounded-lg">
-              <div className="font-bold text-blue-700">{food_analysis.macronutrients.carbohydrates_g}g</div>
+              <div className="font-bold text-blue-700">{food_analysis.macronutrients?.carbohydrates_g || 0}g</div>
               <div className="text-blue-600 text-xs">Carbs</div>
             </div>
             <div className="p-2 bg-emerald-50 rounded-lg">
-              <div className="font-bold text-emerald-700">{food_analysis.macronutrients.proteins_g}g</div>
+              <div className="font-bold text-emerald-700">{food_analysis.macronutrients?.proteins_g || 0}g</div>
               <div className="text-emerald-600 text-xs">Protein</div>
             </div>
             <div className="p-2 bg-amber-50 rounded-lg">
-              <div className="font-bold text-amber-700">{food_analysis.macronutrients.fats_g}g</div>
+              <div className="font-bold text-amber-700">{food_analysis.macronutrients?.fats_g || 0}g</div>
               <div className="text-amber-600 text-xs">Fats</div>
             </div>
           </div>
@@ -214,23 +251,23 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
           <div className="space-y-4">
             <div className="p-4 bg-orange-50 rounded-xl border border-orange-100">
               <div className="text-sm text-orange-800 mb-1">Daily Calorie Need</div>
-              <div className="text-2xl font-bold text-orange-900">{personalized_impact.daily_calorie_requirement} kcal</div>
+              <div className="text-2xl font-bold text-orange-900">{personalized_impact?.daily_calorie_requirement || 0} kcal</div>
               <div className="text-xs text-orange-700 mt-1">
-                This food is {personalized_impact.percentage_of_daily_calories}% of your daily intake
+                This food is {personalized_impact?.percentage_of_daily_calories || 0}% of your daily intake
               </div>
             </div>
             
             <div>
               <div className="text-sm font-medium text-slate-500 mb-2">Goal Alignment</div>
               <div className={`p-3 rounded-lg border text-sm font-medium ${
-                personalized_impact.goal_alignment === 'Good' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                personalized_impact.goal_alignment === 'Moderate' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                personalized_impact?.goal_alignment === 'Good' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                personalized_impact?.goal_alignment === 'Moderate' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                 'bg-red-50 text-red-700 border-red-200'
               }`}>
-                {personalized_impact.goal_alignment}
+                {personalized_impact?.goal_alignment || 'Unknown'}
               </div>
               <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                {personalized_impact.recommended_adjustment}
+                {personalized_impact?.recommended_adjustment || 'No adjustment recommended.'}
               </p>
             </div>
           </div>
@@ -244,34 +281,34 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-slate-600">Diabetes Risk</span>
-              <span className={`px-2 py-1 rounded text-xs font-medium border ${getRiskColor(risk_prediction.diabetes_risk)}`}>
-                {risk_prediction.diabetes_risk}
+              <span className={`px-2 py-1 rounded text-xs font-medium border ${getRiskColor(risk_prediction?.diabetes_risk || 'Low')}`}>
+                {risk_prediction?.diabetes_risk || 'Low'}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-slate-600">Cardio Risk</span>
-              <span className={`px-2 py-1 rounded text-xs font-medium border ${getRiskColor(risk_prediction.cardiovascular_risk)}`}>
-                {risk_prediction.cardiovascular_risk}
+              <span className={`px-2 py-1 rounded text-xs font-medium border ${getRiskColor(risk_prediction?.cardiovascular_risk || 'Low')}`}>
+                {risk_prediction?.cardiovascular_risk || 'Low'}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-slate-600">Obesity Risk</span>
-              <span className={`px-2 py-1 rounded text-xs font-medium border ${getRiskColor(risk_prediction.obesity_risk)}`}>
-                {risk_prediction.obesity_risk}
+              <span className={`px-2 py-1 rounded text-xs font-medium border ${getRiskColor(risk_prediction?.obesity_risk || 'Low')}`}>
+                {risk_prediction?.obesity_risk || 'Low'}
               </span>
             </div>
             <div className="pt-4 mt-4 border-t border-slate-100">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-slate-600">Glycemic Index</span>
-                <span className="font-mono font-medium">{food_analysis.glycemic_index}</span>
+                <span className="font-mono font-medium">{food_analysis.glycemic_index || 0}</span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-2">
                 <div 
                   className={`h-2 rounded-full ${
-                    food_analysis.glycemic_index < 55 ? 'bg-emerald-500' : 
-                    food_analysis.glycemic_index < 70 ? 'bg-amber-500' : 'bg-red-500'
+                    (food_analysis.glycemic_index || 0) < 55 ? 'bg-emerald-500' : 
+                    (food_analysis.glycemic_index || 0) < 70 ? 'bg-amber-500' : 'bg-red-500'
                   }`} 
-                  style={{ width: `${Math.min(food_analysis.glycemic_index, 100)}%` }}
+                  style={{ width: `${Math.min(food_analysis.glycemic_index || 0, 100)}%` }}
                 ></div>
               </div>
             </div>
@@ -282,78 +319,84 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
       {/* Detailed Analysis Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Gut Health */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-            <Brain className="w-5 h-5 text-purple-500" /> Gut Health
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
-              <div className="text-xs text-purple-600 uppercase tracking-wide mb-1">Prebiotic Score</div>
-              <div className="text-xl font-bold text-purple-900">{gut_health_analysis.prebiotic_score}/100</div>
+        {gut_health_analysis && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+              <Brain className="w-5 h-5 text-purple-500" /> Gut Health
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
+                <div className="text-xs text-purple-600 uppercase tracking-wide mb-1">Prebiotic Score</div>
+                <div className="text-xl font-bold text-purple-900">{(gut_health_analysis.prebiotic_score || 0)}/100</div>
+              </div>
+              <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
+                <div className="text-xs text-purple-600 uppercase tracking-wide mb-1">Digestive Friendliness</div>
+                <div className="text-lg font-bold text-purple-900">{gut_health_analysis.digestive_friendliness || 'Unknown'}</div>
+              </div>
             </div>
-            <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
-              <div className="text-xs text-purple-600 uppercase tracking-wide mb-1">Digestive Friendliness</div>
-              <div className="text-lg font-bold text-purple-900">{gut_health_analysis.digestive_friendliness}</div>
+            <div className="mt-4 flex items-center gap-2 text-sm text-slate-600">
+              <AlertTriangle className={`w-4 h-4 ${
+                gut_health_analysis.inflammation_risk === 'High' ? 'text-red-500' : 
+                gut_health_analysis.inflammation_risk === 'Moderate' ? 'text-amber-500' : 'text-emerald-500'
+              }`} />
+              <span>Inflammation Risk: <strong>{gut_health_analysis.inflammation_risk || 'Low'}</strong></span>
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-2 text-sm text-slate-600">
-            <AlertTriangle className={`w-4 h-4 ${
-              gut_health_analysis.inflammation_risk === 'High' ? 'text-red-500' : 
-              gut_health_analysis.inflammation_risk === 'Moderate' ? 'text-amber-500' : 'text-emerald-500'
-            }`} />
-            <span>Inflammation Risk: <strong>{gut_health_analysis.inflammation_risk}</strong></span>
-          </div>
-        </div>
+        )}
 
         {/* Compatibility */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-            <Zap className="w-5 h-5 text-yellow-500" /> Food Compatibility
-          </h3>
-          <p className="text-sm text-slate-500 mb-4 italic">"{food_compatibility.reasoning}"</p>
-          <div className="space-y-3">
-            <div>
-              <span className="text-xs font-medium text-emerald-600 uppercase tracking-wide block mb-1">Good Combinations</span>
-              <div className="flex flex-wrap gap-2">
-                {food_compatibility.compatible_with.map((item, i) => (
-                  <span key={i} className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded text-xs border border-emerald-100">
-                    {item}
-                  </span>
-                ))}
+        {food_compatibility && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-yellow-500" /> Food Compatibility
+            </h3>
+            <p className="text-sm text-slate-500 mb-4 italic">"{food_compatibility.reasoning || 'No compatibility data available.'}"</p>
+            <div className="space-y-3">
+              <div>
+                <span className="text-xs font-medium text-emerald-600 uppercase tracking-wide block mb-1">Good Combinations</span>
+                <div className="flex flex-wrap gap-2">
+                  {food_compatibility.compatible_with?.map((item, i) => (
+                    <span key={i} className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded text-xs border border-emerald-100">
+                      {item}
+                    </span>
+                  )) || <span className="text-xs text-slate-400 italic">None identified</span>}
+                </div>
               </div>
-            </div>
-            <div>
-              <span className="text-xs font-medium text-red-600 uppercase tracking-wide block mb-1">Avoid Combining With</span>
-              <div className="flex flex-wrap gap-2">
-                {food_compatibility.avoid_combining_with.map((item, i) => (
-                  <span key={i} className="px-2 py-1 bg-red-50 text-red-700 rounded text-xs border border-red-100">
-                    {item}
-                  </span>
-                ))}
+              <div>
+                <span className="text-xs font-medium text-red-600 uppercase tracking-wide block mb-1">Avoid Combining With</span>
+                <div className="flex flex-wrap gap-2">
+                  {food_compatibility.avoid_combining_with?.map((item, i) => (
+                    <span key={i} className="px-2 py-1 bg-red-50 text-red-700 rounded text-xs border border-red-100">
+                      {item}
+                    </span>
+                  )) || <span className="text-xs text-slate-400 italic">None identified</span>}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Micronutrients Table */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-          <Scale className="w-5 h-5 text-slate-500" /> Micronutrient Profile
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {Object.entries(food_analysis.micronutrients).map(([key, value]) => (
-            <div key={key} className="p-3 bg-slate-50 rounded-lg text-center">
-              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">
-                {key.replace(/_/g, ' ').replace('mg', '').replace('mcg', '')}
+      {food_analysis.micronutrients && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+            <Scale className="w-5 h-5 text-slate-500" /> Micronutrient Profile
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {Object.entries(food_analysis.micronutrients).map(([key, value]) => (
+              <div key={key} className="p-3 bg-slate-50 rounded-lg text-center">
+                <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">
+                  {key.replace(/_/g, ' ').replace('mg', '').replace('mcg', '')}
+                </div>
+                <div className="font-mono font-medium text-slate-900">
+                  {value} <span className="text-xs text-slate-400">{key.includes('mcg') ? 'mcg' : 'mg'}</span>
+                </div>
               </div>
-              <div className="font-mono font-medium text-slate-900">
-                {value} <span className="text-xs text-slate-400">{key.includes('mcg') ? 'mcg' : 'mg'}</span>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {preventive_health_data && (
         <PreventiveHealthDisplay data={preventive_health_data} />

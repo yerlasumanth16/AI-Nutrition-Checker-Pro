@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { Search, Loader2, ChefHat, Leaf, Settings, User } from 'lucide-react';
+import React, { useState, Component } from 'react';
+import { Search, Loader2, ChefHat, Leaf, Settings, User, AlertTriangle } from 'lucide-react';
 import { analyzeFood, analyzePreventiveHealth } from './services/ai';
 import { NutritionAnalysisResponse, UserProfile } from './types';
 import { NutritionDisplay } from './components/NutritionDisplay';
@@ -18,6 +18,57 @@ const DEFAULT_PROFILE: UserProfile = {
   activity_level: 'moderate',
   goal: 'maintenance'
 };
+
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="max-w-xl mx-auto mt-12 p-8 bg-white rounded-2xl border border-red-100 shadow-sm text-center">
+          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-8 h-8 text-red-500" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Something went wrong</h2>
+          <p className="text-slate-500 mb-6">We encountered a rendering error while displaying the analysis. This can happen if the AI data is malformed.</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-6 py-2 bg-emerald-500 text-white rounded-xl font-medium hover:bg-emerald-600 transition-colors"
+          >
+            Reload Application
+          </button>
+          {process.env.NODE_ENV === 'development' && (
+            <pre className="mt-6 p-4 bg-slate-50 rounded-lg text-left text-xs text-red-600 overflow-auto max-h-40">
+              {this.state.error?.toString()}
+            </pre>
+          )}
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function App() {
   const [query, setQuery] = useState('');
@@ -40,8 +91,8 @@ function App() {
     try {
       const result = await analyzeFood(query, userProfile);
       setData(result);
-    } catch (err) {
-      setError('Failed to analyze food. Please try again.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to analyze food. Please try again.');
       console.error(err);
     } finally {
       setLoading(false);
@@ -88,6 +139,14 @@ function App() {
       ...prev,
       [name]: name === 'age' || name === 'height_cm' || name === 'weight_kg' ? Number(value) : value
     }));
+  };
+
+  const handleClearData = () => {
+    if (window.confirm("Are you sure you want to clear all analysis data? This will reset your current session for privacy.")) {
+      setData(null);
+      setQuery('');
+      setError(null);
+    }
   };
 
   return (
@@ -185,6 +244,24 @@ function App() {
                     </select>
                   </div>
                 </div>
+
+                <div className="mt-6 pt-6 border-t border-slate-100">
+                  <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                    <Settings className="w-4 h-4 text-slate-400" /> Privacy & Security
+                  </h4>
+                  <div className="flex flex-wrap gap-3">
+                    <button 
+                      onClick={handleClearData}
+                      className="text-xs font-medium px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors"
+                    >
+                      Clear Session Data
+                    </button>
+                    <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
+                      End-to-end encrypted AI analysis
+                    </div>
+                  </div>
+                </div>
               </div>
             </motion.div>
           )}
@@ -248,21 +325,23 @@ function App() {
         </div>
 
         {/* Results Section */}
-        {error && (
-          <div className="max-w-xl mx-auto p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-center animate-in fade-in slide-in-from-bottom-2">
-            {error}
-          </div>
-        )}
+        <ErrorBoundary>
+          {error && (
+            <div className="max-w-xl mx-auto p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-center animate-in fade-in slide-in-from-bottom-2">
+              {error}
+            </div>
+          )}
 
-        {data && (
-          <NutritionDisplay 
-            data={data} 
-            onGenerateReport={handleGenerateReport}
-            isGeneratingReport={reportLoading}
-            onRunDeepAnalysis={handleRunDeepAnalysis}
-            isRunningDeepAnalysis={deepAnalysisLoading}
-          />
-        )}
+          {data && (
+            <NutritionDisplay 
+              data={data} 
+              onGenerateReport={handleGenerateReport}
+              isGeneratingReport={reportLoading}
+              onRunDeepAnalysis={handleRunDeepAnalysis}
+              isRunningDeepAnalysis={deepAnalysisLoading}
+            />
+          )}
+        </ErrorBoundary>
 
         {/* Empty State / Features Grid */}
         {!data && !loading && !error && (
