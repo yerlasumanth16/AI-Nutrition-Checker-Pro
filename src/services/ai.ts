@@ -1,8 +1,13 @@
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { NutritionAnalysisResponse, UserProfile } from "../types";
 
 // Helper to get AI instance
-const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// dangerouslyAllowBrowser: true is required because we are running in a client-side Vite app.
+// In a production Vercel environment, you should move this logic to API routes (server-side).
+const getAI = () => new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  dangerouslyAllowBrowser: true
+});
 
 const SYSTEM_INSTRUCTION = `
 You are an advanced AI-powered Clinical Nutrition Intelligence Engine designed for a production-level web platform called: “AI Nutrition Checker Pro”
@@ -374,19 +379,18 @@ export async function analyzePreventiveHealth(
       diet_history_summary: dietHistorySummary
     });
 
-    const ai = getAI();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: inputPayload,
-      config: {
-        systemInstruction: PREVENTIVE_HEALTH_SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        temperature: 0.3,
-        maxOutputTokens: 8192,
-      },
+    const openai = getAI();
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: PREVENTIVE_HEALTH_SYSTEM_INSTRUCTION },
+        { role: "user", content: inputPayload }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
     });
 
-    const text = response.text;
+    const text = completion.choices[0].message.content;
     if (!text) {
       throw new Error("No response from AI");
     }
@@ -417,18 +421,18 @@ export async function analyzeFood(
       download_report: downloadReport
     });
 
-    const ai = getAI();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: inputPayload,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        temperature: 0.3,
-      },
+    const openai = getAI();
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: SYSTEM_INSTRUCTION },
+        { role: "user", content: inputPayload }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
     });
 
-    const text = response.text;
+    const text = completion.choices[0].message.content;
     if (!text) {
       throw new Error("No response from AI");
     }
@@ -443,42 +447,42 @@ export async function analyzeFood(
 // New: Generate Audio Summary (TTS)
 export async function generateAudioSummary(text: string): Promise<string> {
   try {
-    const ai = getAI();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: text }] }],
-      config: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' },
-          },
-        },
-      },
+    const openai = getAI();
+    const mp3 = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: "alloy",
+      input: text,
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!base64Audio) throw new Error("Failed to generate audio");
+    const arrayBuffer = await mp3.arrayBuffer();
     
-    return base64Audio;
+    // Convert ArrayBuffer to Base64 (Browser compatible)
+    let binary = '';
+    const bytes = new Uint8Array(arrayBuffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
   } catch (error) {
     console.error("Error generating audio:", error);
     throw error;
   }
 }
 
-// New: Quick Scan (Flash Lite)
+// New: Quick Scan (Flash Lite equivalent)
 export async function quickScanFood(foodName: string): Promise<any> {
   try {
-    const ai = getAI();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-lite-preview",
-      contents: `Quickly estimate calories and main macros for: ${foodName}. Return JSON: {calories, carbs, protein, fat}.`,
-      config: {
-        responseMimeType: "application/json",
-      }
+    const openai = getAI();
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "You are a nutrition assistant. Return JSON only." },
+        { role: "user", content: `Quickly estimate calories and main macros for: ${foodName}. Return JSON: {calories, carbs, protein, fat}.` }
+      ],
+      response_format: { type: "json_object" },
     });
-    return JSON.parse(response.text || "{}");
+    return JSON.parse(completion.choices[0].message.content || "{}");
   } catch (error) {
     console.error("Quick scan error:", error);
     return null;

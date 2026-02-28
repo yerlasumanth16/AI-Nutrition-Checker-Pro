@@ -150,6 +150,15 @@ export interface PreventiveHealthData {
     testosterone_or_estrogen_support: "Low" | "Moderate" | "High";
     cortisol_balance_support: "Low" | "Moderate" | "High";
   };
+  skin_health_report: {
+    skin_glow_percentage: number;
+    collagen_support_rating: "Low" | "Moderate" | "High";
+    hydration_support_rating: "Low" | "Moderate" | "High";
+    anti_aging_support_score: number;
+    acne_risk_impact: "Increase" | "Neutral" | "Decrease";
+    glycation_risk_level: "Low" | "Moderate" | "High";
+    dermatological_summary: string;
+  };
   six_month_impact_simulation: {
     projected_weight_change_kg: number;
     projected_diabetes_risk_change: "Increase" | "Stable" | "Decrease";
