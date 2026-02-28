@@ -1,12 +1,9 @@
-import OpenAI from "openai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { NutritionAnalysisResponse, UserProfile } from "../types";
 
 // Helper to get AI instance
-// dangerouslyAllowBrowser: true is required because we are running in a client-side Vite app.
-// In a production Vercel environment, you should move this logic to API routes (server-side).
-const getAI = () => new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true
+const getAI = () => new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY || ''
 });
 
 const SYSTEM_INSTRUCTION = `
@@ -76,100 +73,6 @@ Quality Score = 0.4(Protein Density) + 0.3(Fiber Density) + 0.3(Micronutrient Sc
 Based on: Glycemic index, Sodium, Sugar load, Saturated fats
 Return: Low / Moderate / High
 
-🔷 OUTPUT STRUCTURE (STRICT JSON)
-Return ONLY this structure:
-{
-"food_analysis": {
-"food_name": "",
-"serving_reference": "Per 100 grams",
-"calories_kcal": number,
-"macronutrients": {
-"carbohydrates_g": number,
-"proteins_g": number,
-"fats_g": number,
-"fiber_g": number,
-"sugars_g": number
-},
-"micronutrients": {
-"calcium_mg": number,
-"iron_mg": number,
-"potassium_mg": number,
-"magnesium_mg": number,
-"vitamin_c_mg": number,
-"vitamin_b12_mcg": number
-},
-"glycemic_index": number,
-"nutrient_density_score": number,
-"health_score": number,
-"quality_index": number
-},
-
-"personalized_impact": {
-"daily_calorie_requirement": number,
-"percentage_of_daily_calories": number,
-"goal_alignment": "Good/Moderate/Poor",
-"recommended_adjustment": "text"
-},
-
-"risk_prediction": {
-"diabetes_risk": "Low/Moderate/High",
-"cardiovascular_risk": "Low/Moderate/High",
-"obesity_risk": "Low/Moderate/High"
-},
-
-"gut_health_analysis": {
-"prebiotic_score": number,
-"digestive_friendliness": "Good/Moderate/Poor",
-"inflammation_risk": "Low/Moderate/High"
-},
-
-"food_compatibility": {
-"compatible_with": ["list"],
-"avoid_combining_with": ["list"],
-"reasoning": "short explanation"
-},
-
-"ai_recommendations": [
-"suggestion 1",
-"suggestion 2",
-"suggestion 3"
-],
-
-"ui_metadata": {
-"theme_palette": {
-"primary_color": "#4CAF50",
-"secondary_color": "#81C784",
-"accent_color": "#FFB74D",
-"background_gradient": "linear-gradient(to right, #E8F5E9, #FFFFFF)"
-},
-"recommended_visuals": [
-"macro_pie_chart",
-"calorie_progress_bar",
-"health_score_gauge",
-"risk_indicator_badges"
-],
-"icon_style": "rounded, minimal, health-focused",
-"font_style": "modern sans-serif, clean and readable"
-},
-
-"downloadable_report": {
-  "report_id": "unique_id_timestamp",
-  "report_title": "Personalized Nutrition Intelligence Report",
-  "generated_on": "ISO timestamp",
-  "report_summary": "Executive level summary in 5-7 sentences",
-  "detailed_sections": {
-    "user_profile_summary": "text",
-    "metabolic_analysis": "text",
-    "food_nutritional_breakdown": "text",
-    "risk_assessment": "text",
-    "gut_health_analysis": "text",
-    "goal_alignment_analysis": "text",
-    "recommendations": "bullet style text"
-  },
-  "print_ready_html": "<html>FULL PROFESSIONAL CLEAN A4 STYLED HTML DOCUMENT WITH INLINE CSS</html>"
-}
-}
-
 🔷 REPORT GENERATION RULES (Only if download_report is true)
 When generating "print_ready_html":
 - Use A4 page layout
@@ -197,7 +100,6 @@ You are designed for a production-grade platform called: AI Nutrition & Preventi
 Your job is to:
 Perform deep nutritional analysis.
 Calculate metabolic metrics.
-Estimate glycemic load and insulin impact.
 Evaluate cardiovascular risk factors.
 Assess brain and cognitive nutrition.
 Simulate gut microbiome impact.
@@ -213,27 +115,6 @@ Calculate scientifically reasoned Skin Glow and Dermatological Health Index.
 Return STRICT JSON only.
 No markdown.
 No commentary outside JSON.
-All numeric outputs must be realistic approximations based on global nutritional standards.
-
-INPUT FORMAT
-{
-"food_data": {...},
-"user_profile": {
-"age": number,
-"gender": "male/female/other",
-"height_cm": number,
-"weight_kg": number,
-"activity_level": "sedentary/light/moderate/active/athlete",
-"goal": "fat_loss/muscle_gain/maintenance"
-},
-"diet_history_summary": {
-"avg_daily_calories": number,
-"avg_daily_protein": number,
-"avg_daily_sugar": number,
-"avg_daily_fiber": number,
-"avg_daily_sodium": number
-}
-}
 
 CORE CALCULATIONS (INTERNAL LOGIC)
 1️⃣ Basal Metabolic Rate
@@ -275,88 +156,6 @@ If sodium high + potassium low → Cardiovascular risk increases
 11️⃣ Skin Glow Index (%)
 0.25(Antioxidant Score) + 0.20(Collagen Support Score) + 0.15(Hydration Score) + 0.15(Omega-3 Support) + 0.15(Gut Health Influence) − 0.20(Glycation Penalty) − 0.10(Inflammation Penalty)
 Clamp final value between 0 and 100.
-
-OUTPUT STRUCTURE (STRICT JSON)
-Return:
-{
-"metabolic_health_report": {
-"bmr": number,
-"tdee": number,
-"metabolic_efficiency_score": number,
-"calorie_balance_status": "Deficit/Surplus/Maintenance"
-},
-"glycemic_and_insulin_report": {
-"glycemic_index": number,
-"glycemic_load": number,
-"classification": "Low/Moderate/High",
-"insulin_spike_probability": "Low/Moderate/High"
-},
-"cardiovascular_risk_report": {
-"heart_health_index": number,
-"sodium_risk": "Low/Moderate/High",
-"saturated_fat_risk": "Low/Moderate/High",
-"overall_cardiovascular_risk": "Low/Moderate/High"
-},
-"cognitive_nutrition_report": {
-"brain_support_score": number,
-"omega3_support": "Low/Moderate/High",
-"b12_support": "Low/Moderate/High",
-"mental_energy_rating": number
-},
-"gut_microbiome_report": {
-"prebiotic_score": number,
-"digestive_friendliness": "Good/Moderate/Poor",
-"inflammation_risk": "Low/Moderate/High"
-},
-"nutrient_deficiency_projection": {
-"iron_deficiency_risk": "Low/Moderate/High",
-"b12_deficiency_risk": "Low/Moderate/High",
-"calcium_deficiency_risk": "Low/Moderate/High",
-"protein_deficiency_risk": "Low/Moderate/High"
-},
-"body_composition_projection": {
-"weekly_weight_change_estimate_kg": number,
-"lean_mass_gain_potential": "Low/Moderate/High",
-"fat_storage_probability": "Low/Moderate/High"
-},
-"preventive_health_summary": {
-"overall_health_score": number,
-"top_strengths": ["point1", "point2"],
-"top_risks": ["point1", "point2"],
-"priority_recommendations": ["recommendation1", "recommendation2"]
-},
-"genetic_sensitivity_simulation": {
-"caffeine_metabolism_assumption": "Fast/Slow",
-"carb_sensitivity_assumption": "Low/Moderate/High",
-"fat_sensitivity_assumption": "Low/Moderate/High",
-"personalized_note": "text"
-},
-"long_term_diet_trend_analysis": {
-"diabetes_risk_trend": "Stable/Increasing/Decreasing",
-"cardiovascular_risk_trend": "Stable/Increasing/Decreasing",
-"metabolic_stability_trend": "Stable/Improving/Declining"
-},
-"hormonal_balance_support_report": {
-"thyroid_support": "Low/Moderate/High",
-"testosterone_or_estrogen_support": "Low/Moderate/High",
-"cortisol_balance_support": "Low/Moderate/High"
-},
-"skin_health_report": {
-"skin_glow_percentage": number,
-"collagen_support_rating": "Low/Moderate/High",
-"hydration_support_rating": "Low/Moderate/High",
-"anti_aging_support_score": number,
-"acne_risk_impact": "Increase/Neutral/Decrease",
-"glycation_risk_level": "Low/Moderate/High",
-"dermatological_summary": "4-6 sentence scientific explanation of how this food affects skin radiance, elasticity, inflammation, and long-term skin aging."
-},
-"six_month_impact_simulation": {
-"projected_weight_change_kg": number,
-"projected_diabetes_risk_change": "Increase/Stable/Decrease",
-"projected_heart_risk_change": "Increase/Stable/Decrease"
-},
-"medical_disclaimer": "This AI-generated report is for informational purposes only and is not a substitute for professional medical advice. Consult a qualified healthcare provider before making health decisions."
-}
 `;
 
 export async function analyzePreventiveHealth(
@@ -364,7 +163,6 @@ export async function analyzePreventiveHealth(
   userProfile: UserProfile
 ): Promise<any> {
   try {
-    // Mock diet history for now as we don't have a full tracker
     const dietHistorySummary = {
       avg_daily_calories: 2000,
       avg_daily_protein: 70,
@@ -379,28 +177,22 @@ export async function analyzePreventiveHealth(
       diet_history_summary: dietHistorySummary
     });
 
-    const openai = getAI();
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: PREVENTIVE_HEALTH_SYSTEM_INSTRUCTION },
-        { role: "user", content: inputPayload }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3,
+    const ai = getAI();
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: inputPayload,
+      config: {
+        systemInstruction: PREVENTIVE_HEALTH_SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+      },
     });
 
-    const text = completion.choices[0].message.content;
+    const text = response.text;
     if (!text) {
       throw new Error("No response from AI");
     }
 
-    try {
-      return JSON.parse(text);
-    } catch (parseError) {
-      console.error("Failed to parse preventive health JSON:", text);
-      throw new Error("Failed to parse AI response");
-    }
+    return JSON.parse(text);
   } catch (error) {
     console.error("Error analyzing preventive health:", error);
     throw error;
@@ -421,18 +213,17 @@ export async function analyzeFood(
       download_report: downloadReport
     });
 
-    const openai = getAI();
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: SYSTEM_INSTRUCTION },
-        { role: "user", content: inputPayload }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3,
+    const ai = getAI();
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: inputPayload,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+      },
     });
 
-    const text = completion.choices[0].message.content;
+    const text = response.text;
     if (!text) {
       throw new Error("No response from AI");
     }
@@ -444,24 +235,37 @@ export async function analyzeFood(
   }
 }
 
-// New: Generate Audio Summary (TTS)
 export async function generateAudioSummary(text: string): Promise<string> {
   try {
-    const openai = getAI();
-    const mp3 = await openai.audio.speech.create({
-      model: "tts-1",
-      voice: "alloy",
-      input: text,
+    const ai = getAI();
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: `Say clearly and professionally: ${text}` }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Kore' },
+          },
+        },
+      },
     });
 
-    const arrayBuffer = await mp3.arrayBuffer();
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) {
+      throw new Error("No audio data generated");
+    }
+
+    // Gemini TTS returns raw 24kHz 16-bit mono PCM.
+    // Add a WAV header so the browser can play it easily.
+    const pcmData = Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0));
+    const wavData = addWavHeader(pcmData, 24000);
     
-    // Convert ArrayBuffer to Base64 (Browser compatible)
+    // Convert back to base64
     let binary = '';
-    const bytes = new Uint8Array(arrayBuffer);
-    const len = bytes.byteLength;
+    const len = wavData.byteLength;
     for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
+      binary += String.fromCharCode(wavData[i]);
     }
     return window.btoa(binary);
   } catch (error) {
@@ -470,19 +274,55 @@ export async function generateAudioSummary(text: string): Promise<string> {
   }
 }
 
-// New: Quick Scan (Flash Lite equivalent)
+function addWavHeader(pcmData: Uint8Array, sampleRate: number): Uint8Array {
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+
+  // RIFF identifier
+  view.setUint32(0, 0x52494646, false); // "RIFF"
+  // file length
+  view.setUint32(4, 36 + pcmData.length, true);
+  // RIFF type
+  view.setUint32(8, 0x57415645, false); // "WAVE"
+  // format chunk identifier
+  view.setUint32(12, 0x666d7420, false); // "fmt "
+  // format chunk length
+  view.setUint32(16, 16, true);
+  // sample format (raw)
+  view.setUint16(20, 1, true);
+  // channel count
+  view.setUint16(22, 1, true);
+  // sample rate
+  view.setUint32(24, sampleRate, true);
+  // byte rate (sample rate * block align)
+  view.setUint32(28, sampleRate * 2, true);
+  // block align (channel count * bytes per sample)
+  view.setUint16(32, 2, true);
+  // bits per sample
+  view.setUint16(34, 16, true);
+  // data chunk identifier
+  view.setUint32(36, 0x64617461, false); // "data"
+  // data chunk length
+  view.setUint32(40, pcmData.length, true);
+
+  const result = new Uint8Array(44 + pcmData.length);
+  result.set(new Uint8Array(header), 0);
+  result.set(pcmData, 44);
+  return result;
+}
+
 export async function quickScanFood(foodName: string): Promise<any> {
   try {
-    const openai = getAI();
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "You are a nutrition assistant. Return JSON only." },
-        { role: "user", content: `Quickly estimate calories and main macros for: ${foodName}. Return JSON: {calories, carbs, protein, fat}.` }
-      ],
-      response_format: { type: "json_object" },
+    const ai = getAI();
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Quickly estimate calories and main macros for: ${foodName}. Return JSON: {calories, carbs, protein, fat}.`,
+      config: {
+        systemInstruction: "You are a nutrition assistant. Return JSON only.",
+        responseMimeType: "application/json",
+      },
     });
-    return JSON.parse(completion.choices[0].message.content || "{}");
+    return JSON.parse(response.text || "{}");
   } catch (error) {
     console.error("Quick scan error:", error);
     return null;
