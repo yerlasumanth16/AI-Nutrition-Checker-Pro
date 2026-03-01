@@ -7,9 +7,13 @@ import { runIntelligenceEngine, generateAudioSummary } from '../services/ai';
 
 interface IntelligenceDashboardProps {
   userProfile: UserProfile;
+  userStatus: any;
+  onUpdateStatus: (status: any) => void;
   onUpdateStreak?: React.Dispatch<React.SetStateAction<number>>;
   onUpdatePoints?: React.Dispatch<React.SetStateAction<number>>;
 }
+
+const USER_EMAIL = 'yerlasumanth16@gmail.com';
 
 type EngineMode = 'STREAK_ENGINE' | 'MOOD_METABOLIC' | 'FUTURE_PREDICTION' | 'CHEAT_OPTIMIZER' | 'COMMUNITY_ANALYZER' | 'SMART_REMINDER' | 'HEALTH_WARNING' | 'BODY_TYPE_MODE' | 'MEAL_PLANNER' | 'PATTERN_DETECTION' | 'GROCERY_GENERATOR';
 
@@ -35,7 +39,7 @@ const TOOLS: EngineTool[] = [
   { id: 'SMART_REMINDER', name: 'Smart Reminders', description: 'Data-driven nudges for hydration and protein.', icon: <Bell className="w-5 h-5" />, color: 'text-yellow-600', bgColor: 'bg-yellow-50' },
 ];
 
-export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ userProfile, onUpdateStreak, onUpdatePoints }) => {
+export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ userProfile, userStatus, onUpdateStatus, onUpdateStreak, onUpdatePoints }) => {
   const [activeTool, setActiveTool] = useState<EngineMode | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -83,6 +87,20 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ us
     setResult(null);
     setAudioUrl(null);
     try {
+      // Check Limit
+      const limitRes = await fetch('/api/check-limit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: USER_EMAIL }),
+      });
+      const limitData = await limitRes.json();
+
+      if (!limitData.allowed) {
+        alert(limitData.message);
+        setLoading(false);
+        return;
+      }
+
       // ... (existing data preparation)
       let data = { ...inputData };
       if (mode === 'STREAK_ENGINE') {
@@ -110,6 +128,18 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ us
       const engineResult = await runIntelligenceEngine(mode, data, userProfile);
       setResult(engineResult);
       setEngineHistory(prev => [{ mode, result: engineResult, timestamp: new Date().toLocaleTimeString() }, ...prev]);
+
+      // Increment usage count
+      await fetch('/api/increment-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: USER_EMAIL }),
+      });
+      
+      // Refresh status
+      const statusRes = await fetch(`/api/user-status?email=${encodeURIComponent(USER_EMAIL)}`);
+      const newStatus = await statusRes.json();
+      onUpdateStatus(newStatus);
 
       // Update global state if applicable
       if (mode === 'STREAK_ENGINE' && engineResult.reward_points && onUpdatePoints) {
@@ -140,7 +170,7 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ us
         </div>
         <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
           <Sparkles className="w-3 h-3" />
-          Premium AI Active
+          {userStatus?.premium ? 'Premium AI Active' : `${userStatus?.free_usage_count || 0}/2 Free Uses`}
         </div>
       </div>
 

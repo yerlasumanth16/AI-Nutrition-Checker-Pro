@@ -3,14 +3,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, Component, useRef } from 'react';
+import React, { useState, Component, useRef, useEffect } from 'react';
 import { Search, Loader2, ChefHat, Leaf, Settings, User, AlertTriangle, Clock, Trash2, LayoutDashboard, Sparkles, Zap, Award, Camera, Image as ImageIcon } from 'lucide-react';
 import { analyzeFood, analyzePreventiveHealth } from './services/ai';
 import { NutritionAnalysisResponse, UserProfile } from './types';
 import { NutritionDisplay } from './components/NutritionDisplay';
 import { IntelligenceDashboard } from './components/IntelligenceDashboard';
 import { CameraScanner } from './components/CameraScanner';
+import { PremiumSection } from './components/PremiumSection';
 import { motion, AnimatePresence } from 'motion/react';
+
+interface UserStatus {
+  email: string;
+  premium: boolean;
+  free_usage_count: number;
+  last_reset_date: string;
+}
+
+const USER_EMAIL = 'yerlasumanth16@gmail.com'; // In a real app, this would come from Auth
 
 const DEFAULT_PROFILE: UserProfile = {
   age: 30,
@@ -86,7 +96,22 @@ function App() {
   const [streak, setStreak] = useState(5);
   const [points, setPoints] = useState(1250);
   const [showScanner, setShowScanner] = useState(false);
+  const [userStatus, setUserStatus] = useState<UserStatus | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchUserStatus();
+  }, []);
+
+  const fetchUserStatus = async () => {
+    try {
+      const res = await fetch(`/api/user-status?email=${encodeURIComponent(USER_EMAIL)}`);
+      const data = await res.json();
+      setUserStatus(data);
+    } catch (err) {
+      console.error("Failed to fetch user status:", err);
+    }
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,10 +125,32 @@ function App() {
     setData(null);
 
     try {
+      // Check limit first
+      const limitRes = await fetch('/api/check-limit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: USER_EMAIL }),
+      });
+      const limitData = await limitRes.json();
+
+      if (!limitData.allowed) {
+        setError(limitData.message);
+        setLoading(false);
+        return;
+      }
+
       const result = await analyzeFood(searchQuery, userProfile, 'single_food', false, history, imageData);
       setData(result);
       if (result && result.food_analysis) {
         setHistory(prev => [result, ...prev].slice(0, 10));
+        
+        // Increment usage count
+        await fetch('/api/increment-usage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: USER_EMAIL }),
+        });
+        fetchUserStatus(); // Refresh status
       }
     } catch (err: any) {
       setError(err.message || 'Failed to analyze food. Please try again.');
@@ -270,12 +317,22 @@ function App() {
           >
             <IntelligenceDashboard 
               userProfile={userProfile} 
+              userStatus={userStatus}
+              onUpdateStatus={setUserStatus}
               onUpdateStreak={setStreak}
               onUpdatePoints={setPoints}
             />
           </motion.div>
         ) : (
           <React.Fragment>
+            <div className="mb-8">
+              <PremiumSection 
+                userEmail={USER_EMAIL} 
+                currentStatus={userStatus} 
+                onStatusUpdate={setUserStatus} 
+              />
+            </div>
+
             <AnimatePresence>
               {showProfile && (
                 <motion.div 
@@ -384,6 +441,12 @@ function App() {
             </AnimatePresence>
 
             <div className="text-center mb-12">
+              <PremiumSection 
+                userEmail={USER_EMAIL} 
+                currentStatus={userStatus} 
+                onStatusUpdate={setUserStatus} 
+              />
+              
               <motion.h2 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
