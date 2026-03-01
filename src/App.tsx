@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, Component } from 'react';
-import { Search, Loader2, ChefHat, Leaf, Settings, User, AlertTriangle, Clock, Trash2, LayoutDashboard, Sparkles, Zap, Award, Camera } from 'lucide-react';
+import React, { useState, Component, useRef } from 'react';
+import { Search, Loader2, ChefHat, Leaf, Settings, User, AlertTriangle, Clock, Trash2, LayoutDashboard, Sparkles, Zap, Award, Camera, Image as ImageIcon } from 'lucide-react';
 import { analyzeFood, analyzePreventiveHealth } from './services/ai';
 import { NutritionAnalysisResponse, UserProfile } from './types';
 import { NutritionDisplay } from './components/NutritionDisplay';
@@ -86,6 +86,7 @@ function App() {
   const [streak, setStreak] = useState(5);
   const [points, setPoints] = useState(1250);
   const [showScanner, setShowScanner] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,6 +116,17 @@ function App() {
   const handleCapture = (base64Image: string) => {
     setShowScanner(false);
     performAnalysis('', base64Image);
+  };
+
+  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        performAnalysis('', reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleGenerateReport = async () => {
@@ -178,6 +190,14 @@ function App() {
           />
         )}
       </AnimatePresence>
+
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        accept="image/*" 
+        onChange={handleGalleryUpload}
+      />
 
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -405,9 +425,17 @@ function App() {
                     type="button"
                     onClick={() => setShowScanner(true)}
                     className="p-4 bg-white border border-slate-200 text-slate-600 rounded-2xl hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all shadow-sm flex items-center justify-center group/scan"
-                    title="Advanced Scan (Camera/Gallery)"
+                    title="Camera Scan"
                   >
                     <Camera className="w-6 h-6 group-hover/scan:scale-110 transition-transform" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-4 bg-white border border-slate-200 text-slate-600 rounded-2xl hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex items-center justify-center group/gallery"
+                    title="Upload from Gallery"
+                  >
+                    <ImageIcon className="w-6 h-6 group-hover/gallery:scale-110 transition-transform" />
                   </button>
                   <button
                     type="submit"

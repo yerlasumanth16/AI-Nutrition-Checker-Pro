@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Brain, Zap, Target, ShoppingBag, Calendar, AlertCircle, Smile, TrendingUp, Award, Bell, Layout, ChevronRight, Loader2, Sparkles, Utensils, Scale, Clock, Settings } from 'lucide-react';
+import { Brain, Zap, Target, ShoppingBag, Calendar, AlertCircle, Smile, TrendingUp, Award, Bell, Layout, ChevronRight, Loader2, Sparkles, Utensils, Scale, Clock, Settings, Volume2, Play as PlayIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import { UserProfile } from '../types';
-import { runIntelligenceEngine } from '../services/ai';
+import { runIntelligenceEngine, generateAudioSummary } from '../services/ai';
 
 interface IntelligenceDashboardProps {
   userProfile: UserProfile;
@@ -41,10 +41,47 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ us
   const [result, setResult] = useState<any>(null);
   const [inputData, setInputData] = useState<any>({});
   const [engineHistory, setEngineHistory] = useState<{ mode: EngineMode, result: any, timestamp: string }[]>([]);
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
+  const handlePlayVoiceSummary = async () => {
+    if (audioUrl) {
+      const audio = new Audio(audioUrl);
+      audio.play();
+      return;
+    }
+
+    if (!result) return;
+
+    setIsGeneratingAudio(true);
+    try {
+      const reportText = result.report || JSON.stringify(result);
+      const cleanText = reportText
+        .replace(/[#*`_~]/g, '')
+        .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+        .replace(/\n+/g, ' ')
+        .trim();
+
+      const summaryText = `Intelligence Engine Analysis for ${TOOLS.find(t => t.id === activeTool)?.name}. ${cleanText}`;
+      
+      const base64Audio = await generateAudioSummary(summaryText);
+      const blob = await (await fetch(`data:audio/wav;base64,${base64Audio}`)).blob();
+      const url = URL.createObjectURL(blob);
+      setAudioUrl(url);
+      const audio = new Audio(url);
+      audio.play();
+    } catch (error) {
+      console.error("Audio generation failed:", error);
+      alert("Failed to generate voice summary.");
+    } finally {
+      setIsGeneratingAudio(false);
+    }
+  };
 
   const handleRunEngine = async (mode: EngineMode) => {
     setLoading(true);
     setResult(null);
+    setAudioUrl(null);
     try {
       // ... (existing data preparation)
       let data = { ...inputData };
@@ -219,8 +256,22 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ us
                   ) : result ? (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                        <div className="flex items-center gap-2 mb-4 text-indigo-600 font-bold text-sm uppercase tracking-wider">
-                          <Zap className="w-4 h-4" /> Engine Output
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm uppercase tracking-wider">
+                            <Zap className="w-4 h-4" /> Engine Output
+                          </div>
+                          <button
+                            onClick={handlePlayVoiceSummary}
+                            disabled={isGeneratingAudio}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-all text-xs font-bold"
+                          >
+                            {isGeneratingAudio ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Volume2 className="w-3 h-3" />
+                            )}
+                            {isGeneratingAudio ? 'Generating...' : 'Voice Summary'}
+                          </button>
                         </div>
                         
                         {/* Dynamic Result Rendering */}

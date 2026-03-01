@@ -25,25 +25,37 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
 
   const handlePlaySummary = async () => {
     if (audioUrl) {
-      new Audio(audioUrl).play();
+      const audio = new Audio(audioUrl);
+      audio.play();
       return;
     }
 
     setIsGeneratingAudio(true);
     try {
-      const summaryText = `Nutritional analysis for ${data.food_analysis.food_name}. 
-        It contains ${data.food_analysis.calories_kcal} calories. 
-        Health score is ${data.food_analysis.health_score}. 
-        ${data.food_analysis.analysis_summary || ''}`;
+      // Clean up the summary text: remove markdown and make it more conversational
+      const cleanSummary = data.food_analysis.analysis_summary
+        ? data.food_analysis.analysis_summary
+            .replace(/[#*`_~]/g, '') // Remove basic markdown
+            .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Remove links but keep text
+            .replace(/\n+/g, ' ') // Replace newlines with spaces
+            .trim()
+        : '';
+
+      const summaryText = `Here is the nutritional analysis for ${data.food_analysis.food_name}. 
+        It contains approximately ${data.food_analysis.calories_kcal} calories. 
+        The health score is ${data.food_analysis.health_score} out of 100. 
+        ${cleanSummary}`;
       
       const base64Audio = await generateAudioSummary(summaryText);
-      const blob = await (await fetch(`data:audio/mp3;base64,${base64Audio}`)).blob();
+      // The service returns a WAV file, so use audio/wav
+      const blob = await (await fetch(`data:audio/wav;base64,${base64Audio}`)).blob();
       const url = URL.createObjectURL(blob);
       setAudioUrl(url);
-      new Audio(url).play();
+      const audio = new Audio(url);
+      audio.play();
     } catch (error) {
       console.error("Audio generation failed:", error);
-      alert("Failed to generate audio summary.");
+      alert("Failed to generate audio summary. Please try again in a moment.");
     } finally {
       setIsGeneratingAudio(false);
     }
@@ -110,28 +122,54 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
     const container = document.createElement('div');
     container.style.position = 'absolute';
     container.style.left = '-9999px';
-    container.style.width = '800px'; // A4-ish width
+    container.style.top = '0';
+    container.style.width = '800px'; // Standard A4 width roughly
+    container.style.backgroundColor = 'white';
     container.innerHTML = downloadable_report.print_ready_html;
     document.body.appendChild(container);
 
     try {
+      // Wait for images to load
+      const images = container.getElementsByTagName('img');
+      await Promise.all(Array.from(images).map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
+      }));
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       const canvas = await html2canvas(container, {
         scale: 2,
         useCORS: true,
         logging: false,
+        windowWidth: 800,
       });
       
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
       
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Nutrition_Report_${food_analysis.food_name.replace(/\s+/g, '_')}.pdf`);
+      const imgWidth = 210; // A4 width in mm
+      const pageHeight = 297; // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Add the first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      // Add subsequent pages if content exceeds one page
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`AI_Nutrition_Intelligence_Report_${food_analysis.food_name.replace(/\s+/g, '_')}.pdf`);
     } catch (error) {
       console.error("PDF generation failed:", error);
-      alert("Failed to generate PDF. Please try the Print option.");
+      alert("Failed to generate PDF. Please use the Print option as a fallback.");
     } finally {
       document.body.removeChild(container);
     }
