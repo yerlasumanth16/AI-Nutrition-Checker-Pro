@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import { UserProfile } from '../types';
 import { runIntelligenceEngine, generateAudioSummary } from '../services/ai';
+import { useSession } from '../contexts/AuthContext';
 
 interface IntelligenceDashboardProps {
   userProfile: UserProfile;
@@ -12,8 +13,6 @@ interface IntelligenceDashboardProps {
   onUpdateStreak?: React.Dispatch<React.SetStateAction<number>>;
   onUpdatePoints?: React.Dispatch<React.SetStateAction<number>>;
 }
-
-const USER_EMAIL = 'yerlasumanth16@gmail.com';
 
 type EngineMode = 'STREAK_ENGINE' | 'MOOD_METABOLIC' | 'FUTURE_PREDICTION' | 'CHEAT_OPTIMIZER' | 'COMMUNITY_ANALYZER' | 'SMART_REMINDER' | 'HEALTH_WARNING' | 'BODY_TYPE_MODE' | 'MEAL_PLANNER' | 'PATTERN_DETECTION' | 'GROCERY_GENERATOR';
 
@@ -40,6 +39,7 @@ const TOOLS: EngineTool[] = [
 ];
 
 export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ userProfile, userStatus, onUpdateStatus, onUpdateStreak, onUpdatePoints }) => {
+  const { user } = useSession();
   const [activeTool, setActiveTool] = useState<EngineMode | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -83,6 +83,7 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ us
   };
 
   const handleRunEngine = async (mode: EngineMode) => {
+    if (!user) return;
     setLoading(true);
     setResult(null);
     setAudioUrl(null);
@@ -91,8 +92,20 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ us
       const limitRes = await fetch('/api/check-limit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: USER_EMAIL }),
       });
+      
+      if (!limitRes.ok) {
+        let errorMessage = `Limit check failed (${limitRes.status}).`;
+        try {
+          const errData = await limitRes.json();
+          errorMessage = errData.error || errorMessage;
+        } catch (e) {
+          const text = await limitRes.text();
+          errorMessage += ` Server returned: ${text.slice(0, 100)}`;
+        }
+        throw new Error(errorMessage);
+      }
+
       const limitData = await limitRes.json();
 
       if (!limitData.allowed) {
@@ -101,7 +114,6 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ us
         return;
       }
 
-      // ... (existing data preparation)
       let data = { ...inputData };
       if (mode === 'STREAK_ENGINE') {
         data = { streak: 5, score: 85, protein: 120, targetProtein: 150 };
@@ -133,11 +145,13 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ us
       await fetch('/api/increment-usage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: USER_EMAIL }),
       });
       
       // Refresh status
-      const statusRes = await fetch(`/api/user-status?email=${encodeURIComponent(USER_EMAIL)}`);
+      const statusRes = await fetch('/api/user-status');
+      if (!statusRes.ok) {
+        throw new Error("Failed to refresh user status");
+      }
       const newStatus = await statusRes.json();
       onUpdateStatus(newStatus);
 
@@ -170,7 +184,7 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ us
         </div>
         <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
           <Sparkles className="w-3 h-3" />
-          {userStatus?.premium ? 'Premium AI Active' : `${userStatus?.free_usage_count || 0}/2 Free Uses`}
+          {userStatus?.isPremium ? 'Premium AI Active' : `${userStatus?.freeUsageCount || 0}/2 Free Uses`}
         </div>
       </div>
 

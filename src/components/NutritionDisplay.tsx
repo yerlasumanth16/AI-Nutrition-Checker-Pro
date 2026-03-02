@@ -481,20 +481,35 @@ export function NutritionDisplay({ data, onGenerateReport, isGeneratingReport, o
       {food_analysis.micronutrients && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-            <Scale className="w-5 h-5 text-slate-500" /> Micronutrient Profile
+            <Scale className="w-5 h-5 text-slate-500" /> Micronutrient Breakdown
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {Object.entries(food_analysis.micronutrients).map(([key, value]) => (
-              <div key={key} className="p-3 bg-slate-50 rounded-lg text-center">
-                <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">
-                  {key.replace(/_/g, ' ').replace('mg', '').replace('mcg', '')}
-                </div>
-                <div className="font-mono font-medium text-slate-900">
-                  {value} <span className="text-xs text-slate-400">{key.includes('mcg') ? 'mcg' : 'mg'}</span>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-hidden rounded-xl border border-slate-100">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th className="px-4 py-3">Nutrient</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                  <th className="px-4 py-3 text-right">Unit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {Object.entries(food_analysis.micronutrients).map(([key, value]) => {
+                  const name = key.replace(/_/g, ' ').replace('mg', '').replace('mcg', '').trim();
+                  const unit = key.includes('mcg') ? 'mcg' : 'mg';
+                  return (
+                    <tr key={key} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-slate-700 capitalize">{name}</td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-900">{value}</td>
+                      <td className="px-4 py-3 text-right text-slate-500">{unit}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
+          <p className="mt-4 text-[10px] text-slate-400 italic">
+            * Micronutrient values are estimated based on standard nutritional databases and AI analysis of the provided food item.
+          </p>
         </div>
       )}
 

@@ -12,15 +12,16 @@ import { IntelligenceDashboard } from './components/IntelligenceDashboard';
 import { CameraScanner } from './components/CameraScanner';
 import { PremiumSection } from './components/PremiumSection';
 import { motion, AnimatePresence } from 'motion/react';
+import { useSession } from './contexts/AuthContext';
+import { LoginPage } from './pages/LoginPage';
+import { ProfilePage } from './pages/ProfilePage';
 
 interface UserStatus {
   email: string;
-  premium: boolean;
-  free_usage_count: number;
-  last_reset_date: string;
+  isPremium: boolean;
+  freeUsageCount: number;
+  freeUsageResetDate: string;
 }
-
-const USER_EMAIL = 'yerlasumanth16@gmail.com'; // In a real app, this would come from Auth
 
 const DEFAULT_PROFILE: UserProfile = {
   age: 30,
@@ -83,6 +84,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 function App() {
+  const { user, loading: authLoading, refreshUser } = useSession();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
@@ -100,14 +102,18 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchUserStatus();
-  }, []);
+    if (user) {
+      fetchUserStatus();
+    }
+  }, [user]);
 
   const fetchUserStatus = async () => {
     try {
-      const res = await fetch(`/api/user-status?email=${encodeURIComponent(USER_EMAIL)}`);
-      const data = await res.json();
-      setUserStatus(data);
+      const res = await fetch('/api/user-status');
+      if (res.ok) {
+        const data = await res.json();
+        setUserStatus(data);
+      }
     } catch (err) {
       console.error("Failed to fetch user status:", err);
     }
@@ -120,6 +126,7 @@ function App() {
   };
 
   const performAnalysis = async (searchQuery: string, imageData?: string) => {
+    if (!user) return;
     setLoading(true);
     setError(null);
     setData(null);
@@ -129,8 +136,20 @@ function App() {
       const limitRes = await fetch('/api/check-limit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: USER_EMAIL }),
       });
+      
+      if (!limitRes.ok) {
+        let errorMessage = `Limit check failed (${limitRes.status}).`;
+        try {
+          const errData = await limitRes.json();
+          errorMessage = errData.error || errorMessage;
+        } catch (e) {
+          const text = await limitRes.text();
+          errorMessage += ` Server returned: ${text.slice(0, 100)}`;
+        }
+        throw new Error(errorMessage);
+      }
+
       const limitData = await limitRes.json();
 
       if (!limitData.allowed) {
@@ -148,9 +167,9 @@ function App() {
         await fetch('/api/increment-usage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: USER_EMAIL }),
         });
-        fetchUserStatus(); // Refresh status
+        await fetchUserStatus(); // Refresh status
+        await refreshUser(); // Refresh session user status
       }
     } catch (err: any) {
       setError(err.message || 'Failed to analyze food. Please try again.');
@@ -226,6 +245,22 @@ function App() {
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="w-12 h-12 text-emerald-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  if (showProfile) {
+    return <ProfilePage onBack={() => setShowProfile(false)} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-12">
       {/* Scanner Overlay */}
@@ -300,11 +335,17 @@ function App() {
           </div>
 
           <button 
-            onClick={() => setShowProfile(!showProfile)}
-            className="p-2 rounded-full hover:bg-slate-100 transition-colors relative"
+            onClick={() => setShowProfile(true)}
+            className="flex items-center gap-2 p-1 pr-3 rounded-full hover:bg-slate-100 transition-colors relative border border-slate-200"
           >
-            <Settings className="w-5 h-5 text-slate-600" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-emerald-500 rounded-full"></span>
+            <img 
+              src={user.image || 'https://picsum.photos/seed/user/100/100'} 
+              alt={user.name} 
+              className="w-8 h-8 rounded-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+            <span className="text-sm font-bold text-slate-700 hidden sm:block">{user.name.split(' ')[0]}</span>
+            {user.isPremium && <Crown className="w-3 h-3 text-amber-500 absolute -top-1 -right-1" />}
           </button>
         </div>
       </header>
@@ -327,126 +368,12 @@ function App() {
           <React.Fragment>
             <div className="mb-8">
               <PremiumSection 
-                userEmail={USER_EMAIL} 
                 currentStatus={userStatus} 
                 onStatusUpdate={setUserStatus} 
               />
             </div>
 
-            <AnimatePresence>
-              {showProfile && (
-                <motion.div 
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden mb-8"
-                >
-                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                      <User className="w-5 h-5 text-blue-500" /> Your Profile
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Age</label>
-                        <input 
-                          type="number" name="age" value={userProfile.age} onChange={handleProfileChange}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Gender</label>
-                        <select 
-                          name="gender" value={userProfile.gender} onChange={handleProfileChange}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                        >
-                          <option value="male">Male</option>
-                          <option value="female">Female</option>
-                          <option value="other">Other</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Height (cm)</label>
-                        <input 
-                          type="number" name="height_cm" value={userProfile.height_cm} onChange={handleProfileChange}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Weight (kg)</label>
-                        <input 
-                          type="number" name="weight_kg" value={userProfile.weight_kg} onChange={handleProfileChange}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Activity Level</label>
-                        <select 
-                          name="activity_level" value={userProfile.activity_level} onChange={handleProfileChange}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                        >
-                          <option value="sedentary">Sedentary</option>
-                          <option value="light">Light Activity</option>
-                          <option value="moderate">Moderate Activity</option>
-                          <option value="active">Active</option>
-                          <option value="athlete">Athlete</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Goal</label>
-                        <select 
-                          name="goal" value={userProfile.goal} onChange={handleProfileChange}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                        >
-                          <option value="fat_loss">Fat Loss</option>
-                          <option value="maintenance">Maintenance</option>
-                          <option value="muscle_gain">Muscle Gain</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Current Mood</label>
-                        <select 
-                          name="mood" value={userProfile.mood || ''} onChange={handleProfileChange}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                        >
-                          <option value="">Select Mood</option>
-                          <option value="Happy">Happy</option>
-                          <option value="Stressed">Stressed</option>
-                          <option value="Tired">Tired</option>
-                          <option value="Energetic">Energetic</option>
-                          <option value="Neutral">Neutral</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 pt-6 border-t border-slate-100">
-                      <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                        <Settings className="w-4 h-4 text-slate-400" /> Privacy & Security
-                      </h4>
-                      <div className="flex flex-wrap gap-3">
-                        <button 
-                          onClick={handleClearData}
-                          className="text-xs font-medium px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors"
-                        >
-                          Clear Session Data
-                        </button>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
-                          End-to-end encrypted AI analysis
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             <div className="text-center mb-12">
-              <PremiumSection 
-                userEmail={USER_EMAIL} 
-                currentStatus={userStatus} 
-                onStatusUpdate={setUserStatus} 
-              />
-              
               <motion.h2 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -517,8 +444,23 @@ function App() {
 
             <ErrorBoundary>
               {error && (
-                <div className="max-w-xl mx-auto p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-center animate-in fade-in slide-in-from-bottom-2">
-                  {error}
+                <div className="max-w-xl mx-auto p-6 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-center animate-in fade-in slide-in-from-bottom-2 shadow-sm">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <AlertTriangle className="w-5 h-5" />
+                    <span className="font-bold">Usage Limit Reached</span>
+                  </div>
+                  <p className="text-sm leading-relaxed">{error}</p>
+                  {!userStatus?.isPremium && (
+                    <button 
+                      onClick={() => {
+                        const el = document.getElementById('premium-section');
+                        el?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="mt-4 px-6 py-2 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-colors shadow-md"
+                    >
+                      Upgrade to Premium
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -624,6 +566,24 @@ function App() {
     </div>
   );
 }
+
+function Crown({ className }: { className?: string }) {
+  return (
+    <svg 
+      className={className} 
+      xmlns="http://www.w3.org/2000/svg" 
+      width="24" 
+      height="24" 
+      viewBox="0 0 24 24" 
+      fill="currentColor" 
+      stroke="none"
+    >
+      <path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14a2 2 0 0 1 2 2H3a2 2 0 0 1 2-2z" />
+    </svg>
+  );
+}
+
+// ... other helper components remain the same ...
 
 function Activity({ className }: { className?: string }) {
   return (

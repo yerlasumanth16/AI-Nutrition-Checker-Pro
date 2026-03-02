@@ -1,16 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Crown, Check, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { Crown, Check, AlertCircle, Loader2, Sparkles, History, Calendar, CreditCard } from 'lucide-react';
+import { useSession } from '../contexts/AuthContext';
+
+interface PaymentRecord {
+  id: string;
+  order_id: string;
+  payment_id: string;
+  amount: number;
+  status: string;
+  timestamp: string;
+}
 
 interface UserStatus {
   email: string;
-  premium: boolean;
-  free_usage_count: number;
-  last_reset_date: string;
+  isPremium: boolean;
+  freeUsageCount: number;
+  freeUsageResetDate: string;
 }
 
 interface PremiumSectionProps {
-  userEmail: string;
   onStatusUpdate: (status: UserStatus) => void;
   currentStatus: UserStatus | null;
 }
@@ -21,11 +30,38 @@ declare global {
   }
 }
 
-export const PremiumSection: React.FC<PremiumSectionProps> = ({ userEmail, onStatusUpdate, currentStatus }) => {
+export const PremiumSection: React.FC<PremiumSectionProps> = ({ onStatusUpdate, currentStatus }) => {
+  const { user } = useSession();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<PaymentRecord[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const fetchHistory = async () => {
+    if (!user) return;
+    setLoadingHistory(true);
+    try {
+      const res = await fetch('/api/payment-history');
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch history:", err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showHistory) {
+      fetchHistory();
+    }
+  }, [showHistory]);
 
   const handleSubscribe = async () => {
+    if (!user) return;
     setLoading(true);
     setError(null);
 
@@ -34,38 +70,64 @@ export const PremiumSection: React.FC<PremiumSectionProps> = ({ userEmail, onSta
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
+      
+      if (!orderRes.ok) {
+        const errData = await orderRes.json();
+        throw new Error(errData.error || "Failed to create payment order");
+      }
+
       const { order_id } = await orderRes.json();
 
+      if (!window.Razorpay) {
+        throw new Error("Razorpay SDK not loaded. Please check your internet connection.");
+      }
+
+      const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_placeholder';
+      
+      if (razorpayKey === 'rzp_test_placeholder') {
+        setError("Razorpay Key ID is not configured. Please set VITE_RAZORPAY_KEY_ID in your environment variables.");
+        setLoading(false);
+        return;
+      }
+
       const options = {
-        key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_placeholder',
+        key: razorpayKey,
         amount: 1500,
         currency: "INR",
         name: "AI Nutrition Pro",
         description: "Monthly Premium Subscription",
         order_id: order_id,
         handler: async (response: any) => {
+          setLoading(true);
           try {
             const verifyRes = await fetch('/api/verify-payment', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ...response,
-                email: userEmail
-              }),
+              body: JSON.stringify(response),
             });
+            
+            if (!verifyRes.ok) {
+              throw new Error("Payment verification failed on server");
+            }
+
             const data = await verifyRes.json();
             if (data.success) {
               // Refresh status
-              const statusRes = await fetch(`/api/user-status?email=${encodeURIComponent(userEmail)}`);
+              const statusRes = await fetch('/api/user-status');
               const newStatus = await statusRes.json();
               onStatusUpdate(newStatus);
+            } else {
+              throw new Error(data.message || "Verification failed");
             }
-          } catch (err) {
-            setError("Payment verification failed. Please contact support.");
+          } catch (err: any) {
+            setError(err.message || "Payment verification failed. Please contact support.");
+          } finally {
+            setLoading(false);
           }
         },
         prefill: {
-          email: userEmail,
+          email: user.email,
+          name: user.name,
         },
         theme: {
           color: "#1B5E20",
@@ -81,28 +143,90 @@ export const PremiumSection: React.FC<PremiumSectionProps> = ({ userEmail, onSta
     }
   };
 
-  if (!currentStatus) return null;
+  if (!currentStatus || !user) return null;
 
-  if (currentStatus.premium) {
+  if (currentStatus.isPremium) {
     return (
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 flex items-center gap-4"
-      >
-        <div className="bg-emerald-500 p-3 rounded-full">
-          <Crown className="w-6 h-6 text-white" />
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-emerald-900">You are now Premium 🎉</h3>
-          <p className="text-emerald-700 text-sm">Enjoy unlimited nutrition insights and advanced clinical reports.</p>
-        </div>
-      </motion.div>
+      <div className="space-y-6">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 flex items-center justify-between"
+        >
+          <div className="flex items-center gap-4">
+            <div className="bg-emerald-500 p-3 rounded-full">
+              <Crown className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-emerald-900">You are now Premium 🎉</h3>
+              <p className="text-emerald-700 text-sm">Enjoy unlimited nutrition insights and advanced clinical reports.</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setShowHistory(!showHistory)}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-emerald-200 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-all text-sm font-bold"
+          >
+            <History className="w-4 h-4" />
+            {showHistory ? 'Hide History' : 'View History'}
+          </button>
+        </motion.div>
+
+        <AnimatePresence>
+          {showHistory && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-slate-400" /> Subscription History
+                </h4>
+                
+                {loadingHistory ? (
+                  <div className="py-8 flex justify-center">
+                    <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+                  </div>
+                ) : history.length > 0 ? (
+                  <div className="space-y-3">
+                    {history.map((record) => (
+                      <div key={record.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-lg ${record.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                            <Calendar className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-slate-900">
+                              {new Date(record.timestamp).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </div>
+                            <div className="text-[10px] text-slate-500">Order: {record.order_id}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs font-bold text-slate-900">₹{record.amount / 100}</div>
+                          <div className={`text-[9px] font-bold uppercase tracking-wider ${record.status === 'SUCCESS' ? 'text-emerald-600' : 'text-red-600'}`}>
+                            {record.status}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-slate-400 text-sm">
+                    No payment history found.
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" id="premium-section">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -146,10 +270,72 @@ export const PremiumSection: React.FC<PremiumSectionProps> = ({ userEmail, onSta
               {error}
             </div>
           )}
+
+          <div className="mt-8 pt-6 border-t border-zinc-700/50 flex justify-between items-center">
+            <p className="text-zinc-500 text-xs">Secure payments powered by Razorpay</p>
+            <button 
+              onClick={() => setShowHistory(!showHistory)}
+              className="text-zinc-400 hover:text-white text-xs font-bold flex items-center gap-1 transition-colors"
+            >
+              <History className="w-3 h-3" />
+              {showHistory ? 'Hide Payment History' : 'View Payment History'}
+            </button>
+          </div>
         </div>
       </motion.div>
 
-      {currentStatus.free_usage_count >= 2 && (
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+              <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-slate-400" /> Subscription History
+              </h4>
+              
+              {loadingHistory ? (
+                <div className="py-8 flex justify-center">
+                  <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+                </div>
+              ) : history.length > 0 ? (
+                <div className="space-y-3">
+                  {history.map((record) => (
+                    <div key={record.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${record.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                          <Calendar className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-900">
+                            {new Date(record.timestamp).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </div>
+                          <div className="text-[10px] text-slate-500">Order: {record.order_id}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs font-bold text-slate-900">₹{record.amount / 100}</div>
+                        <div className={`text-[9px] font-bold uppercase tracking-wider ${record.status === 'SUCCESS' ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {record.status}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-slate-400 text-sm">
+                  No payment history found.
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {currentStatus.freeUsageCount >= 2 && (
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
