@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,6 +5,109 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum Role {
+  FREE
+  PREMIUM
+  ADMIN
+  BANNED
+}
+
+enum SubscriptionStatus {
+  NONE
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+enum Goal {
+  WEIGHT_LOSS
+  MUSCLE_GAIN
+  MAINTENANCE
+}
+
+model User {
+  id                 String             @id @default(cuid())
+  name               String?
+  email              String?            @unique
+  emailVerified      DateTime?
+  passwordHash       String?
+  profileImage       String?
+  role               Role               @default(FREE)
+  freeUsageCount     Int                @default(0)
+  lastUsageDate      DateTime?
+  subscriptionStatus SubscriptionStatus @default(NONE)
+  razorpayCustomerId String?
+  banned             Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  age           Int?
+  weight        Float?
+  height        Float?
+  goal          Goal?
+  activityLevel String?
+
+  accounts      Account[]
+  sessions      Session[]
+  subscriptions Subscription[]
+  payments      Payment[]
+  analyses      AnalysisHistory[]
+  usageLogs     UsageLog[]
+}
+
+model Subscription {
+  id           String             @id @default(cuid())
+  userId       String
+  plan         Role               @default(PREMIUM)
+  status       SubscriptionStatus @default(ACTIVE)
+  startDate    DateTime           @default(now())
+  endDate      DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id             String   @id @default(cuid())
+  userId         String
+  amount         Int
+  currency       String   @default("INR")
+  orderId        String   @unique
+  paymentId      String?
+  signature      String?
+  status         String   @default("created")
+  razorpayPlanId String?
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AnalysisHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  source      String
+  inputText   String?
+  imageUrl    String?
+  resultJson  Json
+  healthScore Int
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UsageLog {
+  id         String   @id @default(cuid())
+  userId     String
+  endpoint   String
+  success    Boolean
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Account {
@@ -35,22 +135,6 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  accounts      Account[]
-  sessions      Session[]
-
-  // Custom SaaS fields
-  planType      String    @default("free") // "free" or "premium"
-  usageCount    Int       @default(0)
-  lastResetDate DateTime  @default(now())
-  createdAt     DateTime  @default(now())
 }
 
 model VerificationToken {
