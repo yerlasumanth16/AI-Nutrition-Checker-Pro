@@ -95,8 +95,8 @@ export default function Home() {
           
           <div className="flex items-center gap-4">
             <div className="hidden md:block text-right">
-              <p className="text-xs font-semibold uppercase text-zinc-500">Plan: {(session.user as any).planType}</p>
-              <p className="text-xs text-zinc-400">Usage: {(session.user as any).usageCount || 0}/5</p>
+              <p className="text-xs font-semibold uppercase text-zinc-500">Plan: {(session?.user as any)?.planType || "Free"}</p>
+              <p className="text-xs text-zinc-400">Usage: {(session?.user as any)?.usageCount || 0}/5</p>
             </div>
             <button
               onClick={() => signOut()}
@@ -153,11 +153,11 @@ export default function Home() {
                   <CheckCircle2 className="w-6 h-6 text-emerald-500" />
                 </div>
                 <div>
-                  <h3 className="font-semibold">{(session.user as any).planType === "free" ? "Free Tier" : "Premium Tier"}</h3>
-                  <p className="text-xs text-zinc-500">{(session.user as any).planType === "free" ? "5 analyses per day" : "Unlimited analyses"}</p>
+                  <h3 className="font-semibold">{(session?.user as any)?.planType === "premium" ? "Premium Tier" : "Free Tier"}</h3>
+                  <p className="text-xs text-zinc-500">{(session?.user as any)?.planType === "premium" ? "Unlimited analyses" : "5 analyses per day"}</p>
                 </div>
               </div>
-              {(session.user as any).planType === "free" && (
+              {(session?.user as any)?.planType !== "premium" && (
                 <button className="text-xs font-bold uppercase tracking-wider text-emerald-500 hover:text-emerald-400 transition-colors">
                   Upgrade
                 </button>

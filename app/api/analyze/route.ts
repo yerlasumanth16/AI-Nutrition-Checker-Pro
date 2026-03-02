@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 
 const analyzeSchema = z.object({
@@ -11,97 +11,148 @@ const analyzeSchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    // 1. Validate Environment Variables
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: "OpenAI API Key is missing" }, { status: 500 });
+    // ✅ 1. Validate Gemini API Key
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json(
+        { error: "Gemini API key missing" },
+        { status: 500 }
+      );
     }
 
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
     });
 
-    // 2. Check Authentication
+    // ✅ 2. Check Authentication
     const session = await getServerSession(authOptions);
-    if (!session || !session.user || !(session.user as any).id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    if (!session?.user || !(session.user as any).id) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
     }
 
     const userId = (session.user as any).id;
 
-    // 3. Validate Request Body
+    // ✅ 3. Validate Request Body
     const body = await req.json();
-    const result = analyzeSchema.safeParse(body);
-    if (!result.success) {
-      return NextResponse.json({ error: "Invalid request body", details: result.error.format() }, { status: 400 });
+    const parsed = analyzeSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 }
+      );
     }
 
-    const { imageUrl } = result.data;
+    const { imageUrl } = parsed.data;
 
-    // 4. Check Plan and Usage Limits
+    // ✅ 4. Fetch User Plan Info
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { planType: true, usageCount: true, lastResetDate: true },
+      select: {
+        planType: true,
+        usageCount: true,
+        lastResetDate: true,
+      },
     });
 
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "User not found" },
+        { status: 404 }
+      );
     }
 
     const now = new Date();
-    const isNewDay = now.toDateString() !== user.lastResetDate.toDateString();
 
-    let currentUsage = user.usageCount;
+    const lastReset = user.lastResetDate ?? now;
+    const isNewDay =
+      now.toDateString() !== new Date(lastReset).toDateString();
+
+    let currentUsage = user.usageCount ?? 0;
+
     if (isNewDay) {
       currentUsage = 0;
+
       await prisma.user.update({
         where: { id: userId },
-        data: { usageCount: 0, lastResetDate: now },
+        data: {
+          usageCount: 0,
+          lastResetDate: now,
+        },
       });
     }
 
+    // ✅ 5. Free Plan Limit Check
     if (user.planType === "free" && currentUsage >= 5) {
-      return NextResponse.json({ 
-        error: "Usage limit exceeded", 
-        upgradeRequired: true,
-        message: "You have reached your daily limit of 5 analyses. Please upgrade to Premium for unlimited access."
-      }, { status: 403 });
+      return NextResponse.json(
+        {
+          error: "Daily limit reached",
+          upgradeRequired: true,
+          message:
+            "Free plan allows only 5 analyses per day. Upgrade to Premium for unlimited access.",
+        },
+        { status: 403 }
+      );
     }
 
-    // 5. Call AI API
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Analyze this food image and provide nutritional information in JSON format: { calories, protein, carbs, fats, micronutrients: [] }" },
-            {
-              type: "image_url",
-              image_url: {
-                url: imageUrl,
-              },
-            },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
+    // ✅ 6. Call Gemini
+    const prompt = `
+Analyze this food image and return ONLY valid JSON in this format:
 
-    const analysis = JSON.parse(response.choices[0].message.content || "{}");
+{
+  "calories": number,
+  "protein": number,
+  "carbs": number,
+  "fats": number,
+  "micronutrients": []
+}
 
-    // 6. Increment Usage Count Safely
+Image URL: ${imageUrl}
+
+Do not add explanations.
+Return only pure JSON.
+`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+
+    let analysis = {};
+
+    try {
+      analysis = JSON.parse(text);
+    } catch {
+      return NextResponse.json(
+        { error: "Gemini returned invalid JSON" },
+        { status: 500 }
+      );
+    }
+
+    // ✅ 7. Increment Usage Count
     await prisma.user.update({
       where: { id: userId },
-      data: { usageCount: { increment: 1 } },
+      data: {
+        usageCount: { increment: 1 },
+      },
     });
 
-    return NextResponse.json({ success: true, analysis });
+    return NextResponse.json({
+      success: true,
+      analysis,
+    });
 
   } catch (error: any) {
-    console.error("Analysis Error:", error);
-    return NextResponse.json({ 
-      error: "Internal Server Error", 
-      message: error.message || "An unexpected error occurred" 
-    }, { status: 500 });
+    console.error("Gemini Analyze Error:", error);
+
+    return NextResponse.json(
+      {
+        error: "Internal Server Error",
+        message: error?.message || "Unknown error",
+      },
+      { status: 500 }
+    );
   }
 }
