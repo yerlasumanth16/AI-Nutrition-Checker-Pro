@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
+import { env } from "@/lib/env";
 
 const analyzeSchema = z.object({
   imageUrl: z.string().url(),
@@ -12,14 +13,16 @@ const analyzeSchema = z.object({
 export async function POST(req: Request) {
   try {
     // ✅ 1. Validate Gemini API Key
-    if (!process.env.GEMINI_API_KEY) {
+    const apiKey = env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error("Gemini API key missing");
       return NextResponse.json(
-        { error: "Gemini API key missing" },
+        { error: "Server configuration error" },
         { status: 500 }
       );
     }
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash",
     });
@@ -123,10 +126,13 @@ Return only pure JSON.
     let analysis = {};
 
     try {
-      analysis = JSON.parse(text);
-    } catch {
+      // Clean up markdown code blocks if present
+      const cleanedText = text.replace(/```json/g, "").replace(/```/g, "").trim();
+      analysis = JSON.parse(cleanedText);
+    } catch (e) {
+      console.error("JSON Parse Error:", text);
       return NextResponse.json(
-        { error: "Gemini returned invalid JSON" },
+        { error: "AI response parsing failed" },
         { status: 500 }
       );
     }
@@ -145,13 +151,9 @@ Return only pure JSON.
     });
 
   } catch (error: any) {
-    console.error("Gemini Analyze Error:", error);
-
+    console.error("API ERROR:", error);
     return NextResponse.json(
-      {
-        error: "Internal Server Error",
-        message: error?.message || "Unknown error",
-      },
+      { error: "Something went wrong" },
       { status: 500 }
     );
   }

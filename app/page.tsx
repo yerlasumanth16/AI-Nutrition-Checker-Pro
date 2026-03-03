@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { motion, AnimatePresence } from "framer-motion";
 import { Camera, LogOut, LogIn, Loader2, AlertCircle, CheckCircle2, ChevronRight } from "lucide-react";
 
 export default function Home() {
@@ -51,9 +50,7 @@ export default function Home() {
   if (!session) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 p-4">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+        <div 
           className="max-w-md w-full text-center space-y-8"
         >
           <div className="space-y-2">
@@ -73,7 +70,7 @@ export default function Home() {
             <span>5 Free Daily Analyses</span>
             <span>Premium Unlimited</span>
           </div>
-        </motion.div>
+        </div>
       </div>
     );
   }
@@ -135,14 +132,12 @@ export default function Home() {
               </button>
 
               {error && (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
+                <div 
                   className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-xl flex items-start gap-3 text-sm"
                 >
                   <AlertCircle className="w-5 h-5 shrink-0" />
                   <p>{error}</p>
-                </motion.div>
+                </div>
               )}
             </div>
 
@@ -167,62 +162,55 @@ export default function Home() {
 
           {/* Result Section */}
           <section>
-            <AnimatePresence mode="wait">
-              {analysis ? (
-                <motion.div
-                  key="result"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8 space-y-8"
-                >
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-2xl font-bold">Analysis Result</h2>
-                    <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded">Verified by AI</span>
-                  </div>
+            {analysis ? (
+              <div
+                key="result"
+                className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8 space-y-8"
+              >
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold">Analysis Result</h2>
+                  <span className="bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded">Verified by AI</span>
+                </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
-                      <p className="text-xs text-zinc-500 uppercase font-bold tracking-tighter mb-1">Calories</p>
-                      <p className="text-3xl font-light">{analysis.calories}</p>
-                    </div>
-                    <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
-                      <p className="text-xs text-zinc-500 uppercase font-bold tracking-tighter mb-1">Protein</p>
-                      <p className="text-3xl font-light">{analysis.protein}g</p>
-                    </div>
-                    <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
-                      <p className="text-xs text-zinc-500 uppercase font-bold tracking-tighter mb-1">Carbs</p>
-                      <p className="text-3xl font-light">{analysis.carbs}g</p>
-                    </div>
-                    <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
-                      <p className="text-xs text-zinc-500 uppercase font-bold tracking-tighter mb-1">Fats</p>
-                      <p className="text-3xl font-light">{analysis.fats}g</p>
-                    </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
+                    <p className="text-xs text-zinc-500 uppercase font-bold tracking-tighter mb-1">Calories</p>
+                    <p className="text-3xl font-light">{analysis.calories}</p>
                   </div>
+                  <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
+                    <p className="text-xs text-zinc-500 uppercase font-bold tracking-tighter mb-1">Protein</p>
+                    <p className="text-3xl font-light">{analysis.protein}g</p>
+                  </div>
+                  <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
+                    <p className="text-xs text-zinc-500 uppercase font-bold tracking-tighter mb-1">Carbs</p>
+                    <p className="text-3xl font-light">{analysis.carbs}g</p>
+                  </div>
+                  <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
+                    <p className="text-xs text-zinc-500 uppercase font-bold tracking-tighter mb-1">Fats</p>
+                    <p className="text-3xl font-light">{analysis.fats}g</p>
+                  </div>
+                </div>
 
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500">Micronutrients</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {analysis.micronutrients?.map((micro: string, i: number) => (
-                        <span key={i} className="bg-zinc-950 border border-zinc-800 px-3 py-1 rounded-full text-xs text-zinc-300">
-                          {micro}
-                        </span>
-                      ))}
-                    </div>
+                <div className="space-y-4">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500">Micronutrients</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {analysis.micronutrients?.map((micro: string, i: number) => (
+                      <span key={i} className="bg-zinc-950 border border-zinc-800 px-3 py-1 rounded-full text-xs text-zinc-300">
+                        {micro}
+                      </span>
+                    ))}
                   </div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="empty"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="h-full min-h-[400px] border-2 border-dashed border-zinc-800 rounded-3xl flex flex-col items-center justify-center text-zinc-600 space-y-4"
-                >
-                  <Camera className="w-12 h-12 opacity-20" />
-                  <p className="text-sm">Your analysis results will appear here</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+              </div>
+            ) : (
+              <div
+                key="empty"
+                className="h-full min-h-[400px] border-2 border-dashed border-zinc-800 rounded-3xl flex flex-col items-center justify-center text-zinc-600 space-y-4"
+              >
+                <Camera className="w-12 h-12 opacity-20" />
+                <p className="text-sm">Your analysis results will appear here</p>
+              </div>
+            )}
           </section>
         </main>
       </div>
