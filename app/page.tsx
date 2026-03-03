@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Camera, LogOut, LogIn, Loader2, AlertCircle, CheckCircle2, ChevronRight } from "lucide-react";
+import Link from "next/link";
+import { Camera, LogOut, LogIn, Loader2, AlertCircle, CheckCircle2, ChevronRight, User } from "lucide-react";
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -49,24 +50,36 @@ export default function Home() {
 
   if (!session) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 p-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0F172A] p-4">
         <div 
           className="max-w-md w-full text-center space-y-8"
         >
-          <div className="space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight text-white">AI Nutrition SaaS</h1>
-            <p className="text-zinc-400">Analyze your meals instantly with advanced AI. Get detailed nutritional breakdowns and track your health goals.</p>
+          <div className="space-y-4">
+            <h1 className="text-6xl font-black tracking-tighter text-white uppercase leading-none">
+              Clinical<br />Precision
+            </h1>
+            <p className="text-zinc-400 text-lg">Analyze your meals instantly with advanced AI. Get detailed nutritional breakdowns and track your health goals.</p>
           </div>
           
-          <button
-            onClick={() => signIn("google")}
-            className="w-full flex items-center justify-center gap-3 bg-white text-black font-semibold py-4 rounded-2xl hover:bg-zinc-200 transition-all active:scale-95"
-          >
-            <LogIn className="w-5 h-5" />
-            Sign in with Google
-          </button>
+          <div className="space-y-4">
+            <Link
+              href="/login"
+              className="w-full flex items-center justify-center gap-3 bg-white text-black font-bold py-5 rounded-2xl hover:bg-zinc-200 transition-all active:scale-95 shadow-xl"
+            >
+              <LogIn className="w-5 h-5" />
+              Sign In
+            </Link>
+
+            <Link
+              href="/register"
+              className="w-full flex items-center justify-center gap-3 bg-emerald-500 text-white font-bold py-5 rounded-2xl hover:bg-emerald-600 transition-all active:scale-95 shadow-xl shadow-emerald-500/20"
+            >
+              <User className="w-5 h-5" />
+              Create Account
+            </Link>
+          </div>
           
-          <div className="pt-8 border-t border-zinc-800 flex justify-center gap-8 text-xs text-zinc-500 uppercase tracking-widest font-semibold">
+          <div className="pt-8 border-t border-zinc-800 flex justify-center gap-8 text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
             <span>5 Free Daily Analyses</span>
             <span>Premium Unlimited</span>
           </div>

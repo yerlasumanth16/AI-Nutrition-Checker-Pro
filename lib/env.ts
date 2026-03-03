@@ -1,11 +1,8 @@
 const requiredServerEnvs = [
-  "DATABASE_URL",
+  // "DATABASE_URL", // Optional for local SQLite
   "NEXTAUTH_SECRET",
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
-  // "OPENAI_API_KEY", // Optional since we use Gemini
-  // "RAZORPAY_KEY_ID", // Optional for now
-  // "RAZORPAY_KEY_SECRET", // Optional for now
 ];
 
 const requiredClientEnvs = [
