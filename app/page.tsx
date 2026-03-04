@@ -31,9 +31,15 @@ export default function Home() {
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Handle hydration
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Load history and goals from localStorage
   useEffect(() => {
@@ -65,6 +71,8 @@ export default function Home() {
   }, [chatMessages]);
 
   const dailyStats = useMemo(() => {
+    if (!mounted) return { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0 };
+    
     const today = new Date().toISOString().split('T')[0];
     const todayMeals = history.filter(m => m.timestamp.startsWith(today));
     
@@ -452,12 +460,13 @@ User: ${userMsg}
                           value={query}
                           onChange={(e) => { setQuery(e.target.value); if (e.target.value) setImage(null); }}
                           className="flex-1 bg-transparent border-none px-4 py-3 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-0 text-lg"
+                          suppressHydrationWarning
                         />
                       </div>
                       <div className="flex gap-2 p-1 md:p-0">
                         <input type="file" accept="image/*" capture="environment" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
-                        <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-zinc-800 hover:bg-zinc-700 text-white p-3 rounded-xl transition-all flex items-center justify-center border border-zinc-700"><Camera className="w-5 h-5" /></button>
-                        <button type="submit" disabled={loading || (!query.trim() && !image)} className="flex-1 md:flex-none bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-600 text-black font-bold px-6 py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">
+                        <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-zinc-800 hover:bg-zinc-700 text-white p-3 rounded-xl transition-all flex items-center justify-center border border-zinc-700" suppressHydrationWarning><Camera className="w-5 h-5" /></button>
+                        <button type="submit" disabled={loading || (!query.trim() && !image)} className="flex-1 md:flex-none bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 disabled:text-zinc-600 text-black font-bold px-6 py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20" suppressHydrationWarning>
                           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ChevronRight className="w-5 h-5" />}
                           <span>{loading ? "Analyzing" : "Check"}</span>
                         </button>
@@ -748,8 +757,9 @@ User: ${userMsg}
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-emerald-500 transition-colors pr-16"
+                      suppressHydrationWarning
                     />
-                    <button type="submit" disabled={!chatInput.trim() || isChatLoading} className="absolute right-2 top-2 bottom-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 text-black px-4 rounded-xl transition-all">
+                    <button type="submit" disabled={!chatInput.trim() || isChatLoading} className="absolute right-2 top-2 bottom-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-800 text-black px-4 rounded-xl transition-all" suppressHydrationWarning>
                       <ChevronRight className="w-5 h-5" />
                     </button>
                   </form>
@@ -795,7 +805,11 @@ User: ${userMsg}
 
 function NavItem({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
   return (
-    <button onClick={onClick} className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${active ? 'bg-emerald-500 text-black font-bold shadow-lg shadow-emerald-500/20' : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900'}`}>
+    <button 
+      onClick={onClick} 
+      className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${active ? 'bg-emerald-500 text-black font-bold shadow-lg shadow-emerald-500/20' : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900'}`}
+      suppressHydrationWarning
+    >
       {icon}
       <span>{label}</span>
     </button>
@@ -863,6 +877,9 @@ function InsightItem({ label, value }: { label: string; value: string }) {
 }
 
 function getTrendData(history: AnalysisResult[]) {
+  // Ensure we are on the client to avoid hydration mismatch with dates
+  if (typeof window === 'undefined') return [];
+
   const last7Days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - i);
