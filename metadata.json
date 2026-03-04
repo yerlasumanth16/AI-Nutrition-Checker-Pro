@@ -1,5 +1,5 @@
 {
   "name": "AI Nutrition Checker",
   "description": "Instant nutritional analysis for any food item or image. No account required.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["camera"]
 }

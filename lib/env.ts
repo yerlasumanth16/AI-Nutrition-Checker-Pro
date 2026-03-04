@@ -1,6 +1,4 @@
-const requiredServerEnvs = [
-  "DATABASE_URL",
-];
+const requiredServerEnvs: string[] = [];
 
 const requiredClientEnvs = [
   "NEXT_PUBLIC_GEMINI_API_KEY",
@@ -34,6 +32,5 @@ export function validateEnv() {
 validateEnv();
 
 export const env = {
-  DATABASE_URL: process.env.DATABASE_URL || "",
   NEXT_PUBLIC_GEMINI_API_KEY: process.env.NEXT_PUBLIC_GEMINI_API_KEY || "",
 };
