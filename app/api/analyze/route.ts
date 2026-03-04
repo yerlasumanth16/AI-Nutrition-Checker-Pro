@@ -4,7 +4,10 @@ import { z } from "zod";
 import { env } from "@/lib/env";
 
 const analyzeSchema = z.object({
-  imageUrl: z.string().url(),
+  query: z.string().optional(),
+  imageUrl: z.string().url().optional(),
+}).refine(data => data.query || data.imageUrl, {
+  message: "Either query or imageUrl must be provided",
 });
 
 export async function POST(req: Request) {
@@ -27,33 +30,36 @@ export async function POST(req: Request) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: "Invalid request body" },
+        { error: parsed.error.errors[0].message },
         { status: 400 }
       );
     }
 
-    const { imageUrl } = parsed.data;
+    const { query, imageUrl } = parsed.data;
 
     // ✅ 3. Call Gemini
     const prompt = `
-Analyze this food image and return ONLY valid JSON in this format:
+Analyze the following food item or image and return ONLY valid JSON in this format:
 
 {
+  "foodName": string,
   "calories": number,
   "protein": number,
   "carbs": number,
   "fats": number,
-  "micronutrients": []
+  "micronutrients": string[],
+  "healthScore": number (1-100),
+  "summary": string
 }
 
-Image URL: ${imageUrl}
+${query ? `Food Item: ${query}` : `Image URL: ${imageUrl}`}
 
 Do not add explanations.
 Return only pure JSON.
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash-latest",
+      model: "gemini-3-flash-preview",
       contents: prompt,
     });
 

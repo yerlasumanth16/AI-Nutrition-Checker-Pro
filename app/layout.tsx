@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "AI Nutrition SaaS",
-  description: "Analyze your food with AI",
+  title: "AI Nutrition Checker",
+  description: "Instant nutritional insights for any food item or image. No account required.",
 };
 
 export default function RootLayout({
