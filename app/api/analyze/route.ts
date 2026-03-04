@@ -1,8 +1,5 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import { env } from "@/lib/env";
 
@@ -22,24 +19,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-    });
+    const ai = new GoogleGenAI({ apiKey });
 
-    // ✅ 2. Check Authentication
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user || !(session.user as any).id) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const userId = (session.user as any).id;
-
-    // ✅ 3. Validate Request Body
+    // ✅ 2. Validate Request Body
     const body = await req.json();
     const parsed = analyzeSchema.safeParse(body);
 
@@ -52,57 +34,7 @@ export async function POST(req: Request) {
 
     const { imageUrl } = parsed.data;
 
-    // ✅ 4. Fetch User Plan Info
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        planType: true,
-        usageCount: true,
-        lastResetDate: true,
-      },
-    });
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      );
-    }
-
-    const now = new Date();
-
-    const lastReset = user.lastResetDate ?? now;
-    const isNewDay =
-      now.toDateString() !== new Date(lastReset).toDateString();
-
-    let currentUsage = user.usageCount ?? 0;
-
-    if (isNewDay) {
-      currentUsage = 0;
-
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          usageCount: 0,
-          lastResetDate: now,
-        },
-      });
-    }
-
-    // ✅ 5. Free Plan Limit Check
-    if (user.planType === "free" && currentUsage >= 5) {
-      return NextResponse.json(
-        {
-          error: "Daily limit reached",
-          upgradeRequired: true,
-          message:
-            "Free plan allows only 5 analyses per day. Upgrade to Premium for unlimited access.",
-        },
-        { status: 403 }
-      );
-    }
-
-    // ✅ 6. Call Gemini
+    // ✅ 3. Call Gemini
     const prompt = `
 Analyze this food image and return ONLY valid JSON in this format:
 
@@ -120,8 +52,16 @@ Do not add explanations.
 Return only pure JSON.
 `;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const response = await ai.models.generateContent({
+      model: "gemini-1.5-flash-latest",
+      contents: prompt,
+    });
+
+    const text = response.text;
+
+    if (!text) {
+      throw new Error("Empty response from AI");
+    }
 
     let analysis = {};
 
@@ -136,14 +76,6 @@ Return only pure JSON.
         { status: 500 }
       );
     }
-
-    // ✅ 7. Increment Usage Count
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        usageCount: { increment: 1 },
-      },
-    });
 
     return NextResponse.json({
       success: true,

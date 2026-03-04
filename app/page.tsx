@@ -1,12 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useSession, signIn, signOut } from "next-auth/react";
-import Link from "next/link";
-import { Camera, LogOut, LogIn, Loader2, AlertCircle, CheckCircle2, ChevronRight, User } from "lucide-react";
+import { Camera, Loader2, AlertCircle, CheckCircle2, ChevronRight } from "lucide-react";
 
 export default function Home() {
-  const { data: session, status } = useSession();
   const [imageUrl, setImageUrl] = useState("");
   const [analysis, setAnalysis] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -25,7 +22,6 @@ export default function Home() {
         body: JSON.stringify({ imageUrl }),
       });
 
-      // PART 6: PRODUCTION SAFE FETCH
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }));
         throw new Error(errorData.error || errorData.message || "Something went wrong");
@@ -40,54 +36,6 @@ export default function Home() {
     }
   };
 
-  if (status === "loading") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0F172A] p-4">
-        <div 
-          className="max-w-md w-full text-center space-y-8"
-        >
-          <div className="space-y-4">
-            <h1 className="text-6xl font-black tracking-tighter text-white uppercase leading-none">
-              Clinical<br />Precision
-            </h1>
-            <p className="text-zinc-400 text-lg">Analyze your meals instantly with advanced AI. Get detailed nutritional breakdowns and track your health goals.</p>
-          </div>
-          
-          <div className="space-y-4">
-            <Link
-              href="/login"
-              className="w-full flex items-center justify-center gap-3 bg-white text-black font-bold py-5 rounded-2xl hover:bg-zinc-200 transition-all active:scale-95 shadow-xl"
-            >
-              <LogIn className="w-5 h-5" />
-              Sign In
-            </Link>
-
-            <Link
-              href="/register"
-              className="w-full flex items-center justify-center gap-3 bg-emerald-500 text-white font-bold py-5 rounded-2xl hover:bg-emerald-600 transition-all active:scale-95 shadow-xl shadow-emerald-500/20"
-            >
-              <User className="w-5 h-5" />
-              Create Account
-            </Link>
-          </div>
-          
-          <div className="pt-8 border-t border-zinc-800 flex justify-center gap-8 text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-            <span>5 Free Daily Analyses</span>
-            <span>Premium Unlimited</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-8">
@@ -99,21 +47,8 @@ export default function Home() {
             </div>
             <div>
               <h1 className="font-bold text-lg">AI Nutrition</h1>
-              <p className="text-xs text-zinc-500">Welcome, {session.user?.name}</p>
+              <p className="text-xs text-zinc-500">Public Analysis Mode</p>
             </div>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <div className="hidden md:block text-right">
-              <p className="text-xs font-semibold uppercase text-zinc-500">Plan: {(session?.user as any)?.planType || "Free"}</p>
-              <p className="text-xs text-zinc-400">Usage: {(session?.user as any)?.usageCount || 0}/5</p>
-            </div>
-            <button
-              onClick={() => signOut()}
-              className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 transition-colors"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
           </div>
         </header>
 
@@ -154,22 +89,17 @@ export default function Home() {
               )}
             </div>
 
-            {/* Plan Status Card */}
+            {/* Info Card */}
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-2xl bg-zinc-950 flex items-center justify-center">
                   <CheckCircle2 className="w-6 h-6 text-emerald-500" />
                 </div>
                 <div>
-                  <h3 className="font-semibold">{(session?.user as any)?.planType === "premium" ? "Premium Tier" : "Free Tier"}</h3>
-                  <p className="text-xs text-zinc-500">{(session?.user as any)?.planType === "premium" ? "Unlimited analyses" : "5 analyses per day"}</p>
+                  <h3 className="font-semibold">Unlimited Access</h3>
+                  <p className="text-xs text-zinc-500">Public mode is currently active</p>
                 </div>
               </div>
-              {(session?.user as any)?.planType !== "premium" && (
-                <button className="text-xs font-bold uppercase tracking-wider text-emerald-500 hover:text-emerald-400 transition-colors">
-                  Upgrade
-                </button>
-              )}
             </div>
           </section>
 

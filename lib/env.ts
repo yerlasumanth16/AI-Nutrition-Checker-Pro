@@ -1,8 +1,5 @@
 const requiredServerEnvs = [
-  // "DATABASE_URL", // Optional for local SQLite
-  "NEXTAUTH_SECRET",
-  "GOOGLE_CLIENT_ID",
-  "GOOGLE_CLIENT_SECRET",
+  "DATABASE_URL",
 ];
 
 const requiredClientEnvs = [
@@ -30,8 +27,6 @@ export function validateEnv() {
       missingEnvs.join("\n") +
       "\n\nPlease add these to your .env file."
     );
-    // We do NOT throw an error here to prevent the homepage from crashing.
-    // Instead, we log it clearly.
   }
 }
 
@@ -40,11 +35,5 @@ validateEnv();
 
 export const env = {
   DATABASE_URL: process.env.DATABASE_URL || "",
-  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || "",
-  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
-  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
   NEXT_PUBLIC_GEMINI_API_KEY: process.env.NEXT_PUBLIC_GEMINI_API_KEY || "",
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
-  RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || "",
-  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || "",
 };
