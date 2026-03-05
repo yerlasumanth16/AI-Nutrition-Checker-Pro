@@ -773,26 +773,26 @@ User: ${userMsg}
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Age</label>
-            <input type="number" value={formData.age} onChange={e => setFormData({...formData, age: parseInt(e.target.value)})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" />
+            <input type="number" value={formData.age} onChange={e => setFormData({...formData, age: parseInt(e.target.value)})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" suppressHydrationWarning />
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Gender</label>
-            <select value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value as Gender})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors">
+            <select value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value as Gender})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" suppressHydrationWarning>
               <option value="male">Male</option>
               <option value="female">Female</option>
             </select>
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Height (cm)</label>
-            <input type="number" value={formData.height} onChange={e => setFormData({...formData, height: parseInt(e.target.value)})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" />
+            <input type="number" value={formData.height} onChange={e => setFormData({...formData, height: parseInt(e.target.value)})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" suppressHydrationWarning />
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Weight (kg)</label>
-            <input type="number" value={formData.weight} onChange={e => setFormData({...formData, weight: parseInt(e.target.value)})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" />
+            <input type="number" value={formData.weight} onChange={e => setFormData({...formData, weight: parseInt(e.target.value)})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" suppressHydrationWarning />
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Activity Level</label>
-            <select value={formData.activityLevel} onChange={e => setFormData({...formData, activityLevel: e.target.value as ActivityLevel})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors">
+            <select value={formData.activityLevel} onChange={e => setFormData({...formData, activityLevel: e.target.value as ActivityLevel})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" suppressHydrationWarning>
               <option value="sedentary">Sedentary (Office job)</option>
               <option value="light">Light (1-2 days/week)</option>
               <option value="moderate">Moderate (3-5 days/week)</option>
@@ -801,7 +801,7 @@ User: ${userMsg}
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Fitness Goal</label>
-            <select value={formData.goal} onChange={e => setFormData({...formData, goal: e.target.value as HealthGoal})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors">
+            <select value={formData.goal} onChange={e => setFormData({...formData, goal: e.target.value as HealthGoal})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" suppressHydrationWarning>
               <option value="weight-loss">Weight Loss</option>
               <option value="muscle-gain">Muscle Gain</option>
               <option value="balanced">Balanced / Maintenance</option>
@@ -983,10 +983,10 @@ User: ${userMsg}
           <h3 className="text-xl font-bold text-white">Food Comparison</h3>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <input value={food1} onChange={e => setFood1(e.target.value)} placeholder="Food 1 (e.g. Chicken Breast)" className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none" />
-          <input value={food2} onChange={e => setFood2(e.target.value)} placeholder="Food 2 (e.g. Paneer)" className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none" />
+          <input value={food1} onChange={e => setFood1(e.target.value)} placeholder="Food 1 (e.g. Chicken Breast)" className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none" suppressHydrationWarning />
+          <input value={food2} onChange={e => setFood2(e.target.value)} placeholder="Food 2 (e.g. Paneer)" className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none" suppressHydrationWarning />
         </div>
-        <button onClick={handleCompare} disabled={comparing} className="w-full py-3 rounded-xl bg-orange-500 text-white font-bold hover:bg-orange-400 transition-all flex items-center justify-center gap-2">
+        <button onClick={handleCompare} disabled={comparing} className="w-full py-3 rounded-xl bg-orange-500 text-white font-bold hover:bg-orange-400 transition-all flex items-center justify-center gap-2" suppressHydrationWarning>
           {comparing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
           Compare Foods
         </button>
@@ -1436,7 +1436,7 @@ User: ${userMsg}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <select value={workoutType} onChange={e => setWorkoutType(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none">
+            <select value={workoutType} onChange={e => setWorkoutType(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none" suppressHydrationWarning>
               <option>Running</option>
               <option>Cycling</option>
               <option>Weight Lifting</option>
@@ -1447,15 +1447,15 @@ User: ${userMsg}
             </select>
             <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3">
               <Timer className="w-5 h-5 text-zinc-500 mr-2" />
-              <input type="number" value={duration} onChange={e => setDuration(parseInt(e.target.value))} className="bg-transparent border-none text-white outline-none w-full" placeholder="Duration (min)" />
+              <input type="number" value={duration} onChange={e => setDuration(parseInt(e.target.value))} className="bg-transparent border-none text-white outline-none w-full" placeholder="Duration (min)" suppressHydrationWarning />
             </div>
-            <select value={intensity} onChange={e => setIntensity(e.target.value as any)} className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none">
+            <select value={intensity} onChange={e => setIntensity(e.target.value as any)} className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none" suppressHydrationWarning>
               <option value="low">Low Intensity</option>
               <option value="moderate">Moderate Intensity</option>
               <option value="high">High Intensity</option>
             </select>
           </div>
-          <button onClick={addWorkout} className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2">
+          <button onClick={addWorkout} className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2" suppressHydrationWarning>
             <Plus className="w-5 h-5" />
             Add Workout
           </button>
@@ -1812,7 +1812,7 @@ User: ${userMsg}
 
             {activeTab === 'dashboard' && (
               <motion.div key="dashboard" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-12">
-                {(() => {
+                {mounted && (() => {
                   const today = new Date().toISOString().split('T')[0];
                   const todayHydration = hydrationLogs.filter(l => l.timestamp.startsWith(today)).reduce((acc, curr) => acc + curr.amount, 0);
                   const todaySleep = sleepLogs.find(l => l.date === today);
