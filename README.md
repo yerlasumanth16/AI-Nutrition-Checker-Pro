@@ -87,30 +87,7 @@ Analysis:
 Recommendation:
 - Add fiber (vegetables)  
 - Reduce processed fats  
-```
 
----
-
-## 🧠 What FAANG Companies Evaluate  
-
-- Problem Solving Ability  
-- System Design Thinking  
-- Prompt Engineering Skills  
-- Practical AI Application  
-- Scalability Thinking  
-- Communication & Clarity  
-
----
-
-## 🛠️ How to Run  
-
-```bash
-git clone https://github.com/your-username/nutrition-ai-analyzer
-npm install
-npm start
-```
-
----
 
 ## 🌍 Future Enhancements  
 
