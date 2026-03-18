@@ -8,7 +8,7 @@ import {
   MessageSquare, Settings, Target, Calendar, BarChart3, PieChart as PieChartIcon,
   User, ArrowUpRight, ArrowDownRight, Scale, Dumbbell, Timer, Plus, Trash2,
   ChevronDown, ChevronUp, Info as InfoIcon, RefreshCw, Save, ShoppingCart,
-  Moon, Trophy, Users, Mic, Coffee, Sparkles, ArrowLeftRight, ListTodo
+  Moon, Trophy, Users, Mic, Coffee, Sparkles, ArrowLeftRight, ListTodo, Lock
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { GoogleGenAI } from "@google/genai";
@@ -21,8 +21,71 @@ import {
 } from "recharts";
 import { AnalysisResult, HealthGoal, UserProfile, Workout, ActivityLevel, Gender, DailyMealPlan, HydrationLog, HabitLog, SleepLog, CommunityPost } from "./types";
 
+import { 
+  collection, addDoc, query as firestoreQuery, where, getDocs, limit, orderBy, 
+  serverTimestamp, Timestamp, doc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocFromServer
+} from "firebase/firestore";
+import { db, auth } from "../lib/firebase";
+import { useAuth } from "../lib/AuthContext";
+import { LoginModal } from "../components/LoginModal";
+import PremiumPage from "./premium/page";
+import { PremiumGuard } from "../components/PremiumGuard";
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'analysis' | 'dashboard' | 'analytics' | 'assistant' | 'history' | 'profile' | 'workouts' | 'planner' | 'habits' | 'community'>('analysis');
+  const { user, firebaseUser, signInWithGoogle, logout, loading: authLoading } = useAuth();
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'analysis' | 'dashboard' | 'analytics' | 'assistant' | 'history' | 'profile' | 'workouts' | 'planner' | 'habits' | 'community' | 'premium'>('analysis');
   const [activeMode, setActiveMode] = useState<'diet' | 'gym'>('diet');
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -77,50 +140,136 @@ export default function Home() {
     }
   }, [cache]);
 
-  // Load history, workouts, and profile from localStorage
+  // Load data from Firestore when logged in
   useEffect(() => {
-    const savedHistory = localStorage.getItem('nutrition_history');
-    if (savedHistory) {
-      try {
-        setHistory(JSON.parse(savedHistory));
-      } catch (e) {
-        console.error("Failed to load history");
-      }
-    }
-    const savedWorkouts = localStorage.getItem('fitness_workouts');
-    if (savedWorkouts) {
-      try {
-        setWorkouts(JSON.parse(savedWorkouts));
-      } catch (e) {
-        console.error("Failed to load workouts");
-      }
-    }
-    const savedProfile = localStorage.getItem('user_profile');
-    if (savedProfile) {
-      try {
-        setProfile(JSON.parse(savedProfile));
-      } catch (e) {
-        console.error("Failed to load profile");
-      }
-    }
-    const savedMode = localStorage.getItem('active_mode') as 'diet' | 'gym';
-    if (savedMode) setActiveMode(savedMode);
+    if (!firebaseUser) return;
 
-    const savedMealPlans = localStorage.getItem('meal_plans');
-    if (savedMealPlans) setMealPlans(JSON.parse(savedMealPlans));
-    
-    const savedHydration = localStorage.getItem('hydration_logs');
-    if (savedHydration) setHydrationLogs(JSON.parse(savedHydration));
-    
-    const savedHabits = localStorage.getItem('habit_logs');
-    if (savedHabits) setHabitLogs(JSON.parse(savedHabits));
-    
-    const savedSleep = localStorage.getItem('sleep_logs');
-    if (savedSleep) setSleepLogs(JSON.parse(savedSleep));
-    
-    const savedPosts = localStorage.getItem('community_posts');
-    if (savedPosts) setCommunityPosts(JSON.parse(savedPosts));
-  }, []);
+    // Load Nutrition Logs
+    const nutritionQuery = firestoreQuery(
+      collection(db, "nutritionLogs"),
+      where("userId", "==", firebaseUser.uid),
+      orderBy("timestamp", "desc"),
+      limit(50)
+    );
+    const unsubNutrition = onSnapshot(nutritionQuery, (snap: any) => {
+      const logs = snap.docs.map((doc: any) => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
+      })) as any[];
+      setHistory(logs);
+    }, (error) => handleFirestoreError(error, OperationType.GET, "nutritionLogs"));
+
+    // Load Workouts
+    const workoutQuery = firestoreQuery(
+      collection(db, "workouts"),
+      where("userId", "==", firebaseUser.uid),
+      orderBy("timestamp", "desc"),
+      limit(50)
+    );
+    const unsubWorkouts = onSnapshot(workoutQuery, (snap: any) => {
+      const logs = snap.docs.map((doc: any) => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
+      })) as any[];
+      setWorkouts(logs);
+    }, (error) => handleFirestoreError(error, OperationType.GET, "workouts"));
+
+    // Load Meal Plans
+    const mealPlanQuery = firestoreQuery(
+      collection(db, "mealPlans"),
+      where("userId", "==", firebaseUser.uid),
+      orderBy("timestamp", "desc"),
+      limit(7)
+    );
+    const unsubMealPlans = onSnapshot(mealPlanQuery, (snap: any) => {
+      const logs = snap.docs.map((doc: any) => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
+      })) as any[];
+      setMealPlans(logs);
+    }, (error) => handleFirestoreError(error, OperationType.GET, "mealPlans"));
+
+    // Load Hydration Logs
+    const hydrationQuery = firestoreQuery(
+      collection(db, "hydrationLogs"),
+      where("userId", "==", firebaseUser.uid),
+      orderBy("timestamp", "desc"),
+      limit(50)
+    );
+    const unsubHydration = onSnapshot(hydrationQuery, (snap: any) => {
+      const logs = snap.docs.map((doc: any) => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
+      })) as any[];
+      setHydrationLogs(logs);
+    }, (error) => handleFirestoreError(error, OperationType.GET, "hydrationLogs"));
+
+    // Load Sleep Logs
+    const sleepQuery = firestoreQuery(
+      collection(db, "sleepLogs"),
+      where("userId", "==", firebaseUser.uid),
+      orderBy("timestamp", "desc"),
+      limit(30)
+    );
+    const unsubSleep = onSnapshot(sleepQuery, (snap: any) => {
+      const logs = snap.docs.map((doc: any) => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
+      })) as any[];
+      setSleepLogs(logs);
+    }, (error) => handleFirestoreError(error, OperationType.GET, "sleepLogs"));
+
+    // Load Community Posts
+    const communityQuery = firestoreQuery(
+      collection(db, "communityPosts"),
+      orderBy("timestamp", "desc"),
+      limit(50)
+    );
+    const unsubCommunity = onSnapshot(communityQuery, (snap: any) => {
+      const logs = snap.docs.map((doc: any) => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
+      })) as any[];
+      setCommunityPosts(logs);
+    }, (error) => handleFirestoreError(error, OperationType.GET, "communityPosts"));
+
+    const unsubProfile = onSnapshot(doc(db, "users", firebaseUser.uid), (snap: any) => {
+      if (snap.exists()) {
+        setProfile(snap.data() as UserProfile);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`));
+
+    return () => {
+      unsubNutrition();
+      unsubWorkouts();
+      unsubMealPlans();
+      unsubHydration();
+      unsubSleep();
+      unsubCommunity();
+      unsubProfile();
+    };
+  }, [firebaseUser]);
+
+  // Test connection to Firestore
+  useEffect(() => {
+    if (!mounted) return;
+    const testConnection = async () => {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration.");
+        }
+      }
+    };
+    testConnection();
+  }, [mounted]);
 
   // Save data to localStorage
   useEffect(() => {
@@ -285,13 +434,53 @@ export default function Home() {
     setError(null);
     setAnalysis(null);
 
-    // Check cache
-    const cacheKey = image ? `img_${image.data.substring(0, 100)}` : `query_${query.trim().toLowerCase()}`;
-    if (cache[cacheKey]) {
-      setAnalysis(cache[cacheKey]);
-      setHistory(prev => [cache[cacheKey], ...prev.filter(h => h.id !== cache[cacheKey].id)]);
+    const today = new Date().toISOString().split('T')[0];
+    const todayAnalyses = history.filter(h => h.timestamp.startsWith(today)).length;
+    
+    if (user?.subscriptionType !== 'premium' && todayAnalyses >= 3) {
+      setError("Daily limit reached for free users (3/day). Upgrade to Premium for unlimited analysis.");
+      setActiveTab('premium');
       setLoading(false);
       return;
+    }
+
+    const foodName = query.trim().toLowerCase();
+
+    // Check DB cache first
+    if (!image && foodName) {
+      try {
+        // Check cache in Firestore
+        const cacheQuery = firestoreQuery(collection(db, "aiAnalysisCache"), where("foodName", "==", foodName), limit(1));
+        const cacheSnap = await getDocs(cacheQuery);
+        if (!cacheSnap.empty) {
+          const cachedData = cacheSnap.docs[0].data() as AnalysisResult;
+          setAnalysis(cachedData);
+          setLoading(false);
+          
+          // Save to user history if logged in
+          if (firebaseUser) {
+            try {
+              await addDoc(collection(db, "nutritionLogs"), {
+                userId: firebaseUser.uid,
+                foodName: cachedData.foodName,
+                calories: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('calories'))?.value || 0,
+                protein: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('protein'))?.value || 0,
+                carbs: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('carbohydrates'))?.value || 0,
+                fats: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('fat'))?.value || 0,
+                fiber: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('fiber'))?.value || 0,
+                sugar: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('sugar'))?.value || 0,
+                micronutrients: cachedData.micronutrients,
+                timestamp: serverTimestamp()
+              });
+            } catch (error) {
+              handleFirestoreError(error, OperationType.CREATE, "nutritionLogs");
+            }
+          }
+          return;
+        }
+      } catch (e) {
+        console.error("Cache check failed", e);
+      }
     }
 
     try {
@@ -310,6 +499,8 @@ User Profile:
 - Weight: ${profile?.weight || 'N/A'}kg
 - Goal: ${profile?.goal || 'balanced'}
 - Mode: ${activeMode.toUpperCase()}
+- Dietary Restrictions: ${profile?.dietaryRestrictions?.join(', ') || 'None'}
+- Fitness Level: ${profile?.fitnessLevel || 'N/A'}
 
 The user's current health goal is: ${profile?.goal || 'balanced'}. 
 Current Mode: ${activeMode === 'gym' ? 'GYM/FITNESS (Focus on protein, recovery, muscle gain)' : 'DIET/HEALTH (Focus on weight loss, sugar/sodium control, fiber)'}.
@@ -317,63 +508,20 @@ Tailor the analysis, risks, and suggestions to this specific context.
 
 Required JSON structure:
 {
-  "foodName": string (e.g., "Grilled Salmon with Quinoa and Steamed Broccoli"),
-  "portionEstimation": string (e.g., "150g salmon, 100g quinoa, 80g broccoli"),
-  "analysisDate": string (ISO format),
-  "nutritionScore": { 
-    "score": number (0-100), 
-    "level": string (Excellent, Good, Moderate, Poor),
-    "explanation": string (Why this score was given)
-  },
-  "macronutrients": [
-    { "name": string, "value": number, "unit": string, "rdi": number, "percentage": number, "status": string (Optimal, High, Low) }
-  ],
-  "micronutrients": [
-    { "name": string, "value": number, "unit": string, "rdi": number, "percentage": number, "status": string (Optimal, High, Low) }
-  ],
-  "risks": [
-    { "name": string, "explanation": string, "severity": string (Low, Moderate, High, Critical), "consequences": string }
-  ],
-  "metabolicImpact": {
-    "glycemicImpact": string,
-    "energyDensity": string,
-    "metabolicLoad": string,
-    "nutrientDensityScore": number,
-    "analysis": string
-  },
-  "healthInsights": {
-    "weightManagement": string,
-    "muscleBuilding": string,
-    "heartHealth": string,
-    "diabetesSuitability": string,
-    "fitnessCompatibility": string
-  },
+  "foodName": string,
+  "portionEstimation": string,
+  "analysisDate": string,
+  "nutritionScore": { "score": number, "level": string, "explanation": string },
+  "macronutrients": [ { "name": string, "value": number, "unit": string, "rdi": number, "percentage": number, "status": string } ],
+  "micronutrients": [ { "name": string, "value": number, "unit": string, "rdi": number, "percentage": number, "status": string } ],
+  "risks": [ { "name": string, "explanation": string, "severity": string, "consequences": string } ],
+  "metabolicImpact": { "glycemicImpact": string, "energyDensity": string, "metabolicLoad": string, "nutrientDensityScore": number, "analysis": string },
+  "healthInsights": { "weightManagement": string, "muscleBuilding": string, "heartHealth": string, "diabetesSuitability": string, "fitnessCompatibility": string },
   "clinicalSummary": string,
-  "expertFeatures": {
-    "mealRating": string,
-    "classification": string,
-    "longTermImpact": string,
-    "suggestions": string[],
-    "alternatives": string[]
-  }
+  "expertFeatures": { "mealRating": string, "classification": string, "longTermImpact": string, "suggestions": string[], "alternatives": string[] }
 }
-
-Nutrients to include:
-- Macronutrients: Calories, Protein, Carbohydrates, Total Fat, Saturated Fat, Fiber, Sugar.
-- Micronutrients: Sodium, Potassium, Calcium, Iron, Magnesium, Zinc, Vitamin A, Vitamin B complex, Vitamin C, Vitamin D, Vitamin K.
-
-For each nutrient, provide the actual value, RDI (Recommended Daily Intake), percentage of RDI, and interpretation (Low, Optimal, High).
-Detect possible health risks (e.g., high sodium -> hypertension risk, high sugar -> diabetes risk).
-Calculate a Nutrition Quality Score (0-100) based on nutrient balance, density, and quality.
-Generate professional health insights on energy levels, heart health, and goal suitability.
-Provide diet improvement suggestions and healthier alternatives.
-
-${isUrl ? `Image URL: ${query}` : query ? `Food Item: ${query}` : "Analyze the provided image."}
-
-Do not add explanations outside the JSON.
-Return only pure JSON.
 `;
-
+      
       const parts: any[] = [{ text: prompt }];
       if (image) {
         parts.push({
@@ -385,8 +533,11 @@ Return only pure JSON.
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3-flash-preview",
         contents: { parts },
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
       });
 
       const text = response.text;
@@ -404,8 +555,37 @@ Return only pure JSON.
       }
 
       setAnalysis(result);
-      setHistory(prev => [result, ...prev].slice(0, 15));
-      setCache(prev => ({ ...prev, [cacheKey]: result }));
+      
+      // Cache the result in Firestore
+      try {
+        await addDoc(collection(db, "aiAnalysisCache"), {
+          ...result,
+          foodName: result.foodName.toLowerCase(),
+          timestamp: serverTimestamp()
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, "aiAnalysisCache");
+      }
+
+      // Save to user history if logged in
+      if (firebaseUser) {
+        try {
+          await addDoc(collection(db, "nutritionLogs"), {
+            userId: firebaseUser.uid,
+            foodName: result.foodName,
+            calories: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('calories'))?.value || 0,
+            protein: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('protein'))?.value || 0,
+            carbs: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('carbohydrates'))?.value || 0,
+            fats: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('fat'))?.value || 0,
+            fiber: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('fiber'))?.value || 0,
+            sugar: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('sugar'))?.value || 0,
+            micronutrients: result.micronutrients,
+            timestamp: serverTimestamp()
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, "nutritionLogs");
+        }
+      }
     } catch (err: any) {
       setError(err.message || "Something went wrong during analysis");
     } finally {
@@ -439,6 +619,8 @@ Generate a 1-day personalized meal plan based on the following user profile:
 - Calorie Target: ${profile.calorieTarget} kcal
 - Macro Targets: Protein ${profile.macroTargets.protein}g, Carbs ${profile.macroTargets.carbs}g, Fat ${profile.macroTargets.fat}g
 - Mode: ${activeMode.toUpperCase()}
+- Dietary Restrictions: ${profile.dietaryRestrictions?.join(', ') || 'None'}
+- Fitness Level: ${profile.fitnessLevel || 'N/A'}
 
 The plan should include Breakfast, Lunch, Dinner, and 2 Snacks.
 For each meal, provide:
@@ -463,8 +645,11 @@ Return ONLY valid JSON in this format:
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3-flash-preview",
         contents: { parts: [{ text: prompt }] },
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
       });
 
       const text = response.text;
@@ -473,6 +658,18 @@ Return ONLY valid JSON in this format:
       const cleanedText = text.replace(/```json/g, "").replace(/```/g, "").trim();
       const newPlan: DailyMealPlan = JSON.parse(cleanedText);
       
+      if (firebaseUser) {
+        try {
+          await addDoc(collection(db, "mealPlans"), {
+            userId: firebaseUser.uid,
+            ...newPlan,
+            timestamp: serverTimestamp()
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, "mealPlans");
+        }
+      }
+
       setMealPlans(prev => {
         const filtered = prev.filter(p => p.date !== newPlan.date);
         return [newPlan, ...filtered];
@@ -506,6 +703,8 @@ Return ONLY valid JSON in this format:
 You are a professional AI Nutrition & Fitness Coach. 
 Context: ${context}
 User Profile: ${JSON.stringify(profile)}
+Dietary Restrictions: ${profile?.dietaryRestrictions?.join(', ') || 'None'}
+Fitness Level: ${profile?.fitnessLevel || 'N/A'}
 Current Mode: ${activeMode.toUpperCase()}
 User History Summary: ${history.length} meals tracked recently. Total calories today: ${dailyStats.calories}. Calories burned today: ${dailyStats.caloriesBurned}.
 
@@ -514,8 +713,11 @@ User: ${userMsg}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3-flash-preview",
         contents: [{ text: prompt }],
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
       });
 
       setChatMessages(prev => [...prev, { role: 'assistant', content: response.text || "I'm sorry, I couldn't process that." }]);
@@ -548,7 +750,7 @@ User: ${userMsg}
     doc.text(`Primary Health Goal: ${profile?.goal.replace('-', ' ').toUpperCase() || userGoal.replace('-', ' ').toUpperCase()}`, 14, 38);
     
     if (profile) {
-      doc.text(`BMI: ${profile.bmi.toFixed(1)} | BMR: ${Math.round(profile.bmr)} | TDEE: ${Math.round(profile.tdee)}`, 14, 44);
+      doc.text(`BMI: ${profile.bmi?.toFixed(1) || 'N/A'} | BMR: ${Math.round(profile.bmr || 0)} | TDEE: ${Math.round(profile.tdee || 0)}`, 14, 44);
       doc.text(`Daily Calorie Target: ${Math.round(profile.calorieTarget)} kcal`, 14, 50);
     }
     
@@ -743,18 +945,50 @@ User: ${userMsg}
       height: profile?.height || 175,
       weight: profile?.weight || 70,
       activityLevel: profile?.activityLevel || 'moderate' as ActivityLevel,
-      goal: profile?.goal || 'balanced' as HealthGoal
+      goal: profile?.goal || 'balanced' as HealthGoal,
+      dietaryRestrictions: profile?.dietaryRestrictions || [] as string[],
+      fitnessLevel: profile?.fitnessLevel || 'sedentary'
     });
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const dietaryOptions = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Keto', 'Paleo', 'Dairy-Free', 'Nut-Free'];
+
+    const toggleDietaryRestriction = (restriction: string) => {
+      setFormData(prev => ({
+        ...prev,
+        dietaryRestrictions: prev.dietaryRestrictions.includes(restriction)
+          ? prev.dietaryRestrictions.filter(r => r !== restriction)
+          : [...prev.dietaryRestrictions, restriction]
+      }));
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
-      const newProfile = calculateProfile(formData);
-      setProfile({
-        ...newProfile,
+      const calculated = calculateProfile(formData);
+      const newProfile: UserProfile = {
+        ...calculated,
+        dietaryRestrictions: formData.dietaryRestrictions,
+        fitnessLevel: formData.fitnessLevel,
         points: profile?.points || 0,
         badges: profile?.badges || [],
         streak: profile?.streak || 0
-      });
+      };
+
+      if (firebaseUser) {
+        try {
+          await setDoc(doc(db, "users", firebaseUser.uid), {
+            ...newProfile,
+            name: firebaseUser.displayName || 'User',
+            email: firebaseUser.email,
+            subscriptionType: user?.subscriptionType || 'free',
+            role: 'user',
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, `users/${firebaseUser.uid}`);
+        }
+      }
+      
+      setProfile(newProfile);
       setActiveTab('dashboard');
     };
 
@@ -808,6 +1042,35 @@ User: ${userMsg}
               <option value="heart-health">Heart Health</option>
               <option value="diabetes">Blood Sugar Control</option>
             </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Current Fitness Level</label>
+            <select value={formData.fitnessLevel} onChange={e => setFormData({...formData, fitnessLevel: e.target.value})} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" suppressHydrationWarning>
+              <option value="sedentary">Sedentary</option>
+              <option value="lightly_active">Lightly Active</option>
+              <option value="moderately_active">Moderately Active</option>
+              <option value="very_active">Very Active</option>
+              <option value="extra_active">Extra Active</option>
+            </select>
+          </div>
+          <div className="md:col-span-2 space-y-3">
+            <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Dietary Restrictions</label>
+            <div className="flex flex-wrap gap-2">
+              {dietaryOptions.map(option => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => toggleDietaryRestriction(option)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                    formData.dietaryRestrictions.includes(option)
+                      ? 'bg-emerald-500 border-emerald-500 text-black'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-700'
+                  }`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
           </div>
           <button type="submit" className="md:col-span-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold py-4 rounded-2xl transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
             <Save className="w-5 h-5" />
@@ -961,7 +1224,13 @@ User: ${userMsg}
         if (!apiKey) throw new Error("API key missing");
         const ai = new GoogleGenAI({ apiKey });
         const prompt = `Compare ${food1} vs ${food2}. Provide calories, protein, carbs, fat, and a health score (0-100) for each. Also give a recommendation on which is better for ${profile?.goal || 'balanced diet'}. Return ONLY JSON: { "food1": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "score": number }, "food2": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "score": number }, "recommendation": string }`;
-        const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: { parts: [{ text: prompt }] } });
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: { parts: [{ text: prompt }] },
+          config: {
+            tools: [{ googleSearch: {} }]
+          }
+        });
         const text = response.text;
         if (text) {
           const cleanedText = text.replace(/```json/g, "").replace(/```/g, "").trim();
@@ -1022,17 +1291,28 @@ User: ${userMsg}
   const CommunityView = () => {
     const [postContent, setPostContent] = useState("");
 
-    const addPost = () => {
+    const addPost = async () => {
       if (!postContent.trim()) return;
-      const newPost: CommunityPost = {
-        id: Math.random().toString(36).substr(2, 9),
-        userId: 'current-user',
-        userName: profile?.gender === 'male' ? 'John Doe' : 'Jane Doe',
+      const newPost: Partial<CommunityPost> = {
+        userId: firebaseUser?.uid || 'guest',
+        userName: firebaseUser?.displayName || (profile?.gender === 'male' ? 'John Doe' : 'Jane Doe'),
         content: postContent,
         timestamp: new Date().toISOString(),
         likes: 0
       };
-      setCommunityPosts([newPost, ...communityPosts]);
+      
+      if (firebaseUser) {
+        try {
+          await addDoc(collection(db, "communityPosts"), {
+            ...newPost,
+            timestamp: serverTimestamp()
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, "communityPosts");
+        }
+      } else {
+        setCommunityPosts([{ id: Math.random().toString(36).substr(2, 9), ...newPost } as CommunityPost, ...communityPosts]);
+      }
       setPostContent("");
     };
 
@@ -1141,14 +1421,40 @@ User: ${userMsg}
     const todayHydration = hydrationLogs.filter(l => l.timestamp.startsWith(today)).reduce((acc, curr) => acc + curr.amount, 0);
     const todaySleep = sleepLogs.find(l => l.date === today);
 
-    const addHydration = (amount: number) => {
-      setHydrationLogs([{ timestamp: new Date().toISOString(), amount }, ...hydrationLogs]);
+    const addHydration = async (amount: number) => {
+      const newLog = { timestamp: new Date().toISOString(), amount };
+      if (firebaseUser) {
+        try {
+          await addDoc(collection(db, "hydrationLogs"), {
+            userId: firebaseUser.uid,
+            ...newLog,
+            timestamp: serverTimestamp()
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, "hydrationLogs");
+        }
+      } else {
+        setHydrationLogs([newLog, ...hydrationLogs]);
+      }
     };
 
-    const addSleep = (duration: number, quality: number) => {
+    const addSleep = async (duration: number, quality: number) => {
       const recoveryScore = Math.round((duration / 8) * 50 + (quality / 10) * 50);
       const newLog: SleepLog = { date: today, duration, quality, recoveryScore };
-      setSleepLogs([newLog, ...sleepLogs.filter(l => l.date !== today)]);
+      
+      if (firebaseUser) {
+        try {
+          await setDoc(doc(db, "sleepLogs", `${firebaseUser.uid}_${today}`), {
+            userId: firebaseUser.uid,
+            ...newLog,
+            timestamp: serverTimestamp()
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, `sleepLogs/${firebaseUser.uid}_${today}`);
+        }
+      } else {
+        setSleepLogs([newLog, ...sleepLogs.filter(l => l.date !== today)]);
+      }
     };
 
     return (
@@ -1211,13 +1517,13 @@ User: ${userMsg}
               </div>
             ) : (
               <div className="space-y-4">
-                <input type="number" placeholder="Hours slept" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none" id="sleep-hours" />
-                <input type="number" placeholder="Quality (1-10)" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none" id="sleep-quality" />
+                <input type="number" placeholder="Hours slept" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none" id="sleep-hours" suppressHydrationWarning />
+                <input type="number" placeholder="Quality (1-10)" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none" id="sleep-quality" suppressHydrationWarning />
                 <button onClick={() => {
                   const h = (document.getElementById('sleep-hours') as HTMLInputElement).value;
                   const q = (document.getElementById('sleep-quality') as HTMLInputElement).value;
                   if (h && q) addSleep(parseFloat(h), parseFloat(q));
-                }} className="w-full py-3 rounded-xl bg-indigo-500 text-white font-bold hover:bg-indigo-400 transition-all">Log Sleep</button>
+                }} className="w-full py-3 rounded-xl bg-indigo-500 text-white font-bold hover:bg-indigo-400 transition-all" suppressHydrationWarning>Log Sleep</button>
               </div>
             )}
           </div>
@@ -1397,7 +1703,7 @@ User: ${userMsg}
     const [duration, setDuration] = useState(30);
     const [intensity, setIntensity] = useState<'low' | 'moderate' | 'high'>('moderate');
 
-    const addWorkout = () => {
+    const addWorkout = async () => {
       // MET values (approximate)
       const metValues: Record<string, number> = {
         "Running": 8,
@@ -1413,8 +1719,7 @@ User: ${userMsg}
       const intensityMult = intensity === 'low' ? 0.8 : intensity === 'high' ? 1.2 : 1;
       const caloriesBurned = Math.round((met * intensityMult * 3.5 * (profile?.weight || 70) / 200) * duration);
 
-      const newWorkout: Workout = {
-        id: Math.random().toString(36).substr(2, 9),
+      const newWorkout: Partial<Workout> = {
         timestamp: new Date().toISOString(),
         type: workoutType,
         duration,
@@ -1422,7 +1727,19 @@ User: ${userMsg}
         caloriesBurned
       };
 
-      setWorkouts([newWorkout, ...workouts]);
+      if (firebaseUser) {
+        try {
+          await addDoc(collection(db, "workouts"), {
+            userId: firebaseUser.uid,
+            ...newWorkout,
+            timestamp: serverTimestamp()
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, "workouts");
+        }
+      } else {
+        setWorkouts([{ id: Math.random().toString(36).substr(2, 9), ...newWorkout } as Workout, ...workouts]);
+      }
     };
 
     return (
@@ -1481,7 +1798,17 @@ User: ${userMsg}
                     <p className="text-[10px] text-zinc-600">{new Date(w.timestamp).toLocaleDateString()}</p>
                   </div>
                   <button 
-                    onClick={() => setWorkouts(workouts.filter(item => item.id !== w.id))}
+                    onClick={async () => {
+                      if (firebaseUser) {
+                        try {
+                          await deleteDoc(doc(db, "workouts", w.id));
+                        } catch (error) {
+                          handleFirestoreError(error, OperationType.DELETE, `workouts/${w.id}`);
+                        }
+                      } else {
+                        setWorkouts(workouts.filter(item => item.id !== w.id));
+                      }
+                    }}
                     className="p-2 text-zinc-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -1495,6 +1822,14 @@ User: ${userMsg}
       </div>
     );
   };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#050505] text-zinc-100 font-sans selection:bg-emerald-500/30 flex flex-col md:flex-row">
@@ -1536,21 +1871,34 @@ User: ${userMsg}
           <NavItem active={activeTab === 'community'} onClick={() => setActiveTab('community')} icon={<Users className="w-5 h-5" />} label="Community" />
           <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<History className="w-5 h-5" />} label="History" />
           <NavItem active={activeTab === 'assistant'} onClick={() => setActiveTab('assistant')} icon={<MessageSquare className="w-5 h-5" />} label="AI Coach" />
+          <NavItem active={activeTab === 'premium'} onClick={() => setActiveTab('premium')} icon={<Sparkles className="w-5 h-5 text-emerald-500" />} label="Premium" />
           <NavItem active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<User className="w-5 h-5" />} label="Profile" />
         </nav>
 
         <div className="mt-auto pt-6 border-t border-zinc-900">
-          <div className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/50 border border-zinc-800">
-            <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
-              <User className="w-4 h-4 text-zinc-400" />
+          {firebaseUser ? (
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/50 border border-zinc-800">
+              <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
+                <User className="w-4 h-4 text-zinc-400" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-white">{mounted && profile ? 'Active User' : 'Guest User'}</span>
+                <span className="text-[10px] text-zinc-500 uppercase tracking-widest" suppressHydrationWarning>
+                  {mounted ? userGoal.replace('-', ' ') : 'balanced'}
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-white">{mounted && profile ? 'Active User' : 'Guest User'}</span>
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest" suppressHydrationWarning>
-                {mounted ? userGoal.replace('-', ' ') : 'balanced'}
-              </span>
-            </div>
-          </div>
+          ) : (
+            <button 
+              onClick={() => setIsLoginModalOpen(true)}
+              className="w-full flex items-center gap-3 p-3 rounded-2xl bg-emerald-500 text-black font-bold hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20"
+            >
+              <div className="w-8 h-8 rounded-full bg-black/10 flex items-center justify-center">
+                <Lock className="w-4 h-4" />
+              </div>
+              <span className="text-xs">Sign In / Register</span>
+            </button>
+          )}
         </div>
       </aside>
 
@@ -1605,6 +1953,25 @@ User: ${userMsg}
                     )}
                   </form>
                   {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-start gap-3 text-sm"><AlertCircle className="w-5 h-5 shrink-0" /><p>{error}</p></div>}
+                  
+                  {!firebaseUser && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-emerald-500/10 border border-emerald-500/20 rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-6"
+                    >
+                      <div className="space-y-2">
+                        <h3 className="text-xl font-bold text-white">Save your progress</h3>
+                        <p className="text-sm text-zinc-400">Create an account to track your nutritional history and get personalized coaching.</p>
+                      </div>
+                      <button 
+                        onClick={() => setIsLoginModalOpen(true)}
+                        className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-8 py-4 rounded-2xl transition-all shadow-lg shadow-emerald-500/20 whitespace-nowrap"
+                      >
+                        Get Started Now
+                      </button>
+                    </motion.div>
+                  )}
                 </section>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1654,7 +2021,24 @@ User: ${userMsg}
                           <span>{new Date(analysis.timestamp).toLocaleDateString()}</span>
                         </div>
                       </div>
-                      <button onClick={generatePDF} className="flex items-center gap-2 bg-white text-black px-6 py-3 rounded-2xl font-bold hover:bg-zinc-200 transition-all shadow-xl shadow-white/5"><Download className="w-5 h-5" />Download PDF Report</button>
+                      <button 
+                        onClick={() => {
+                          if (user?.subscriptionType === 'premium') {
+                            generatePDF();
+                          } else {
+                            setActiveTab('premium');
+                          }
+                        }} 
+                        className="flex items-center gap-2 bg-white text-black px-6 py-3 rounded-2xl font-bold hover:bg-zinc-200 transition-all shadow-xl shadow-white/5 relative group"
+                      >
+                        <Download className="w-5 h-5" />
+                        Download PDF Report
+                        {user?.subscriptionType !== 'premium' && (
+                          <div className="absolute -top-2 -right-2 bg-emerald-500 text-black p-1 rounded-full shadow-lg">
+                            <Lock className="w-3 h-3" />
+                          </div>
+                        )}
+                      </button>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -1839,7 +2223,7 @@ User: ${userMsg}
                           <div className="flex gap-4">
                             <div className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 flex flex-col items-center">
                               <span className="text-[10px] font-bold text-zinc-500 uppercase">BMI</span>
-                              <span className="text-lg font-bold text-white">{profile.bmi.toFixed(1)}</span>
+                              <span className="text-lg font-bold text-white">{profile.bmi?.toFixed(1) || 'N/A'}</span>
                             </div>
                             <div className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 flex flex-col items-center">
                               <span className="text-[10px] font-bold text-zinc-500 uppercase">BMR</span>
@@ -1988,7 +2372,9 @@ User: ${userMsg}
 
             {activeTab === 'planner' && (
               <motion.div key="planner" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <PlannerView />
+                <PremiumGuard featureName="AI Meal Planner">
+                  <PlannerView />
+                </PremiumGuard>
               </motion.div>
             )}
 
@@ -2006,9 +2392,20 @@ User: ${userMsg}
 
             {activeTab === 'profile' && (
               <motion.div key="profile" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-12">
-                <header className="space-y-4">
-                  <h1 className="text-4xl font-bold tracking-tight text-white">User <span className="text-emerald-500">Profile</span></h1>
-                  <p className="text-zinc-400">Manage your body metrics and fitness settings.</p>
+                <header className="flex items-center justify-between">
+                  <div className="space-y-4">
+                    <h1 className="text-4xl font-bold tracking-tight text-white">User <span className="text-emerald-500">Profile</span></h1>
+                    <p className="text-zinc-400">Manage your body metrics and fitness settings.</p>
+                  </div>
+                  {firebaseUser && (
+                    <button 
+                      onClick={() => logout()} 
+                      className="flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 transition-all"
+                    >
+                      <Lock className="w-4 h-4" />
+                      <span>Logout</span>
+                    </button>
+                  )}
                 </header>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -2017,15 +2414,48 @@ User: ${userMsg}
                   </div>
                   <div className="space-y-8">
                     <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8 space-y-8">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xl font-bold text-white">Subscription</h3>
+                        {user?.subscriptionType === 'premium' && (
+                          <span className="px-3 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase rounded-full border border-emerald-500/20">Active</span>
+                        )}
+                      </div>
+                      <div className="space-y-4">
+                        <div className="p-4 rounded-2xl bg-zinc-950/50 border border-zinc-800/50 space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-zinc-500 text-sm">Current Plan</span>
+                            <span className="font-bold text-white">{user?.subscriptionType === 'premium' ? 'Premium Nutrition Pro' : 'Free Plan'}</span>
+                          </div>
+                          {user?.subscriptionEnd && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-zinc-500 text-sm">Renews On</span>
+                              <span className="font-bold text-white">{new Date(user.subscriptionEnd).toLocaleDateString()}</span>
+                            </div>
+                          )}
+                        </div>
+                        {user?.subscriptionType !== 'premium' ? (
+                          <button onClick={() => setActiveTab('premium')} className="w-full py-4 rounded-2xl bg-emerald-500 text-black font-bold hover:bg-emerald-400 transition-all flex items-center justify-center gap-2">
+                            <Sparkles className="w-4 h-4" />
+                            Upgrade to Premium
+                          </button>
+                        ) : (
+                          <button onClick={() => setActiveTab('premium')} className="w-full py-4 rounded-2xl bg-zinc-800 border border-zinc-700 text-white font-bold hover:bg-zinc-700 transition-all flex items-center justify-center gap-2">
+                            Manage Subscription
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8 space-y-8">
                       <h3 className="text-xl font-bold text-white">Data Management</h3>
                       <div className="space-y-4">
-                        <button onClick={() => { if(confirm('Clear all meal history?')) { setHistory([]); localStorage.removeItem('nutrition_history'); } }} className="w-full py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 font-bold hover:bg-red-500/20 transition-all flex items-center justify-center gap-2">
+                        <button onClick={() => { if(confirm('Clear all local meal history?')) { setHistory([]); localStorage.removeItem('nutrition_history'); } }} className="w-full py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 font-bold hover:bg-red-500/20 transition-all flex items-center justify-center gap-2">
                           <Trash2 className="w-4 h-4" />
-                          Clear Meal History
+                          Clear Local Meal History
                         </button>
-                        <button onClick={() => { if(confirm('Clear all workout history?')) { setWorkouts([]); localStorage.removeItem('fitness_workouts'); } }} className="w-full py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 font-bold hover:bg-red-500/20 transition-all flex items-center justify-center gap-2">
+                        <button onClick={() => { if(confirm('Clear all local workout history?')) { setWorkouts([]); localStorage.removeItem('fitness_workouts'); } }} className="w-full py-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 font-bold hover:bg-red-500/20 transition-all flex items-center justify-center gap-2">
                           <Trash2 className="w-4 h-4" />
-                          Clear Workout History
+                          Clear Local Workout History
                         </button>
                         <button onClick={() => { const data = JSON.stringify({ history, workouts, profile }); const blob = new Blob([data], {type: 'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'nutriai_backup.json'; a.click(); }} className="w-full py-4 rounded-2xl bg-zinc-800 border border-zinc-700 text-white font-bold hover:bg-zinc-700 transition-all flex items-center justify-center gap-2">
                           <Download className="w-4 h-4" />
@@ -2040,7 +2470,7 @@ User: ${userMsg}
                         <div className="space-y-4">
                           <div className="flex justify-between items-center p-3 rounded-xl bg-zinc-950/50">
                             <span className="text-zinc-500 text-sm">BMI</span>
-                            <span className={`font-bold ${profile.bmi < 18.5 || profile.bmi > 25 ? 'text-orange-500' : 'text-emerald-500'}`}>{profile.bmi.toFixed(1)}</span>
+                            <span className={`font-bold ${(profile.bmi || 0) < 18.5 || (profile.bmi || 0) > 25 ? 'text-orange-500' : 'text-emerald-500'}`}>{profile.bmi?.toFixed(1) || 'N/A'}</span>
                           </div>
                           <div className="flex justify-between items-center p-3 rounded-xl bg-zinc-950/50">
                             <span className="text-zinc-500 text-sm">BMR</span>
@@ -2064,6 +2494,12 @@ User: ${userMsg}
               </motion.div>
             )}
 
+            {activeTab === 'premium' && (
+              <motion.div key="premium" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <PremiumPage />
+              </motion.div>
+            )}
+
             {activeTab === 'workouts' && (
               <motion.div key="workouts" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-12">
                 <header className="space-y-4">
@@ -2076,67 +2512,69 @@ User: ${userMsg}
 
             {activeTab === 'analytics' && (
               <motion.div key="analytics" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-12">
-                <header className="space-y-4">
-                  <h1 className="text-4xl font-bold tracking-tight text-white">Fitness & Nutrition <span className="text-emerald-500">Analytics</span></h1>
-                  <p className="text-zinc-400">Visualize your long-term progress and trends.</p>
-                </header>
+                <PremiumGuard featureName="Advanced Analytics">
+                  <header className="space-y-4">
+                    <h1 className="text-4xl font-bold tracking-tight text-white">Fitness & Nutrition <span className="text-emerald-500">Analytics</span></h1>
+                    <p className="text-zinc-400">Visualize your long-term progress and trends.</p>
+                  </header>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8">
-                    <h3 className="text-lg font-bold text-white mb-6">Calorie Balance (Intake vs Burned)</h3>
-                    <div className="h-80 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={getTrendData(history, workouts, mounted)}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                          <XAxis dataKey="date" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
-                          <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
-                          <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px' }} />
-                          <Legend />
-                          <Bar dataKey="calories" name="Intake" fill="#10b981" radius={[4, 4, 0, 0]} />
-                          <Bar dataKey="burned" name="Burned" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                          <Line type="monotone" dataKey="workoutCount" name="Workouts" stroke="#3b82f6" strokeWidth={2} />
-                        </ComposedChart>
-                      </ResponsiveContainer>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8">
+                      <h3 className="text-lg font-bold text-white mb-6">Calorie Balance (Intake vs Burned)</h3>
+                      <div className="h-80 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={getTrendData(history, workouts, mounted)}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                            <XAxis dataKey="date" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                            <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px' }} />
+                            <Legend />
+                            <Bar dataKey="calories" name="Intake" fill="#10b981" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="burned" name="Burned" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                            <Line type="monotone" dataKey="workoutCount" name="Workouts" stroke="#3b82f6" strokeWidth={2} />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                    <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8">
+                      <h3 className="text-lg font-bold text-white mb-6">Macronutrient Trends</h3>
+                      <div className="h-80 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={getTrendData(history, workouts, mounted)}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                            <XAxis dataKey="date" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
+                            <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px' }} />
+                            <Legend />
+                            <Line type="monotone" dataKey="protein" name="Protein (g)" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} />
+                            <Line type="monotone" dataKey="carbs" name="Carbs (g)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
                     </div>
                   </div>
-                  <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8">
-                    <h3 className="text-lg font-bold text-white mb-6">Macronutrient Trends</h3>
-                    <div className="h-80 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={getTrendData(history, workouts, mounted)}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                          <XAxis dataKey="date" stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
-                          <YAxis stroke="#71717a" fontSize={12} tickLine={false} axisLine={false} />
-                          <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px' }} />
-                          <Legend />
-                          <Line type="monotone" dataKey="protein" name="Protein (g)" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} />
-                          <Line type="monotone" dataKey="carbs" name="Carbs (g)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-2 bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8">
-                    <h3 className="text-xl font-bold text-white mb-8">Weekly Performance Summary</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="p-6 rounded-2xl bg-zinc-950/50 border border-zinc-800/50 space-y-2">
-                        <p className="text-xs text-zinc-500 font-bold uppercase">Avg. Daily Intake</p>
-                        <p className="text-2xl font-bold text-white">{mounted ? Math.round(getTrendData(history, workouts, mounted).reduce((acc, curr) => acc + curr.calories, 0) / 7) : 0} kcal</p>
-                      </div>
-                      <div className="p-6 rounded-2xl bg-zinc-950/50 border border-zinc-800/50 space-y-2">
-                        <p className="text-xs text-zinc-500 font-bold uppercase">Avg. Calories Burned</p>
-                        <p className="text-2xl font-bold text-emerald-500">{mounted ? Math.round(getTrendData(history, workouts, mounted).reduce((acc, curr) => acc + curr.burned, 0) / 7) : 0} kcal</p>
-                      </div>
-                      <div className="p-6 rounded-2xl bg-zinc-950/50 border border-zinc-800/50 space-y-2">
-                        <p className="text-xs text-zinc-500 font-bold uppercase">Total Workouts</p>
-                        <p className="text-2xl font-bold text-blue-500">{mounted ? getTrendData(history, workouts, mounted).reduce((acc, curr) => acc + curr.workoutCount, 0) : 0} sessions</p>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="lg:col-span-2 bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8">
+                      <h3 className="text-xl font-bold text-white mb-8">Weekly Performance Summary</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="p-6 rounded-2xl bg-zinc-950/50 border border-zinc-800/50 space-y-2">
+                          <p className="text-xs text-zinc-500 font-bold uppercase">Avg. Daily Intake</p>
+                          <p className="text-2xl font-bold text-white">{mounted ? Math.round(getTrendData(history, workouts, mounted).reduce((acc, curr) => acc + curr.calories, 0) / 7) : 0} kcal</p>
+                        </div>
+                        <div className="p-6 rounded-2xl bg-zinc-950/50 border border-zinc-800/50 space-y-2">
+                          <p className="text-xs text-zinc-500 font-bold uppercase">Avg. Calories Burned</p>
+                          <p className="text-2xl font-bold text-emerald-500">{mounted ? Math.round(getTrendData(history, workouts, mounted).reduce((acc, curr) => acc + curr.burned, 0) / 7) : 0} kcal</p>
+                        </div>
+                        <div className="p-6 rounded-2xl bg-zinc-950/50 border border-zinc-800/50 space-y-2">
+                          <p className="text-xs text-zinc-500 font-bold uppercase">Total Workouts</p>
+                          <p className="text-2xl font-bold text-blue-500">{mounted ? getTrendData(history, workouts, mounted).reduce((acc, curr) => acc + curr.workoutCount, 0) : 0} sessions</p>
+                        </div>
                       </div>
                     </div>
+                    <DeficiencyDetector />
                   </div>
-                  <DeficiencyDetector />
-                </div>
+                </PremiumGuard>
               </motion.div>
             )}
 
@@ -2247,6 +2685,11 @@ User: ${userMsg}
           </AnimatePresence>
         </div>
       </main>
+
+      <LoginModal 
+        isOpen={isLoginModalOpen} 
+        onClose={() => setIsLoginModalOpen(false)} 
+      />
     </div>
   );
 }

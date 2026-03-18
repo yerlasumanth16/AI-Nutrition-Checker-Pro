@@ -22,6 +22,8 @@ export interface UserProfile {
   badges: string[];
   streak: number;
   lastActiveDate?: string;
+  dietaryRestrictions?: string[];
+  fitnessLevel?: string;
 }
 
 export interface Workout {
@@ -87,6 +89,7 @@ export interface AnalysisResult {
   clinicalSummary: string;
   expertFeatures: ExpertFeatures;
   goalContext?: HealthGoal;
+  groundingMetadata?: any;
 }
 
 export interface Meal {

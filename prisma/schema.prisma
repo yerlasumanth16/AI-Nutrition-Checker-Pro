@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id               String           @id @default(cuid())
+  name             String
+  email            String           @unique
+  password         String
+  profilePhoto     String?
+  createdAt        DateTime         @default(now())
+  subscriptionType String           @default("free") // free, premium
+  subscriptionId   String?          // Razorpay subscription ID
+  subscriptionStatus String?        // active, cancelled, expired
+  subscriptionStart DateTime?
+  subscriptionEnd   DateTime?
+  profile          Profile?
+  nutritionLogs    NutritionLog[]
+  mealPlans        MealPlan[]
+  workouts         Workout[]
+  dailyProgress    DailyProgress[]
+  preferences      UserPreference[]
+  payments         Payment[]
+}
+
+model Payment {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  razorpayOrderId  String?
+  razorpayPaymentId String?
+  razorpaySignature String?
+  amount           Float
+  currency         String
+  status           String   // created, captured, failed
+  planType         String
+  createdAt        DateTime @default(now())
+}
+
+model Profile {
+  id                String  @id @default(cuid())
+  userId            String  @unique
+  user              User    @relation(fields: [userId], references: [id])
+  age               Int
+  gender            String
+  height            Float
+  weight            Float
+  bodyFat           Float?
+  fitnessGoal       String
+  activityLevel     String
+  dietaryPreference String?
+}
+
+model NutritionLog {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  foodName       String
+  calories       Float
+  protein        Float
+  carbs          Float
+  fats           Float
+  fiber          Float?
+  sugar          Float?
+  micronutrients String? // JSON string
+  timestamp      DateTime @default(now())
+}
+
+model MealPlan {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  date           DateTime
+  mealType       String // breakfast, lunch, dinner, snack
+  foodItems      String // JSON string
+  totalCalories  Float
+  totalProtein   Float
+  totalCarbs     Float
+  totalFats      Float
+}
+
+model Workout {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  exerciseName   String
+  category       String
+  duration       Int // minutes
+  caloriesBurned Float
+  intensity      String
+  date           DateTime @default(now())
+}
+
+model DailyProgress {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  date           DateTime @unique
+  calorieIntake  Float    @default(0)
+  caloriesBurned Float    @default(0)
+  weight         Float?
+  waterIntake    Float    @default(0) // ml
+
+  @@unique([userId, date])
+}
+
+model AIAnalysisCache {
+  id             String   @id @default(cuid())
+  foodName       String   @unique
+  breakdown      String // JSON string
+  healthScore    Int
+  riskIndicators String // JSON string
+  timestamp      DateTime @default(now())
+}
+
+model UserPreference {
+  id                String  @id @default(cuid())
+  userId            String  @unique
+  user              User    @relation(fields: [userId], references: [id])
+  dietType          String?
+  workoutPreference String?
+  notifications     Boolean @default(true)
+  healthGoals       String? // JSON string
+}

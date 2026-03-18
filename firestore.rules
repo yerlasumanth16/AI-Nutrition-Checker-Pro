@@ -1,0 +1,284 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: users
+    // Document ID: userId
+    // Fields:
+    //   - name: string (required)
+    //   - email: string (required, email format)
+    //   - profilePhoto: string (optional)
+    //   - subscriptionType: string (required, enum: ['free', 'premium'])
+    //   - subscriptionId: string (optional)
+    //   - subscriptionStatus: string (optional, enum: ['active', 'cancelled', 'expired'])
+    //   - subscriptionStart: timestamp (optional)
+    //   - subscriptionEnd: timestamp (optional)
+    //   - role: string (optional, enum: ['user', 'admin'])
+    //
+    // Collection: nutritionLogs
+    // Document ID: logId
+    // Fields:
+    //   - userId: string (required)
+    //   - foodName: string (required)
+    //   - calories: number (required)
+    //   - protein: number (required)
+    //   - carbs: number (required)
+    //   - fats: number (required)
+    //   - fiber: number (optional)
+    //   - sugar: number (optional)
+    //   - micronutrients: string (optional, JSON)
+    //   - timestamp: timestamp (required)
+    //
+    // Collection: mealPlans
+    // Document ID: planId
+    // Fields:
+    //   - userId: string (required)
+    //   - date: timestamp (required)
+    //   - mealType: string (required)
+    //   - foodItems: string (required, JSON)
+    //   - totalCalories: number (required)
+    //   - totalProtein: number (required)
+    //   - totalCarbs: number (required)
+    //   - totalFats: number (required)
+    //
+    // Collection: workouts
+    // Document ID: workoutId
+    // Fields:
+    //   - userId: string (required)
+    //   - exerciseName: string (required)
+    //   - category: string (required)
+    //   - duration: number (required)
+    //   - caloriesBurned: number (required)
+    //   - intensity: string (required)
+    //   - date: timestamp (required)
+    //
+    // Collection: dailyProgress
+    // Document ID: progressId
+    // Fields:
+    //   - userId: string (required)
+    //   - date: timestamp (required)
+    //   - calorieIntake: number (required)
+    //   - caloriesBurned: number (required)
+    //   - weight: number (optional)
+    //   - waterIntake: number (required)
+    //
+    // Collection: aiAnalysisCache
+    // Document ID: cacheId
+    // Fields:
+    //   - foodName: string (required)
+    //   - breakdown: string (required, JSON)
+    //   - healthScore: number (required)
+    //   - riskIndicators: string (required, JSON)
+    //   - timestamp: timestamp (required)
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "yerlasumanth16@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasRequiredFields(['name', 'email', 'subscriptionType']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             isValidEmail(data.email) &&
+             data.subscriptionType in ['free', 'premium'] &&
+             (!('subscriptionStatus' in data) || data.subscriptionStatus in ['active', 'cancelled', 'expired']) &&
+             (!('role' in data) || data.role in ['user', 'admin']) &&
+             (!('dietaryRestrictions' in data) || data.dietaryRestrictions is list) &&
+             (!('fitnessLevel' in data) || data.fitnessLevel in ['sedentary', 'lightly_active', 'moderately_active', 'very_active', 'extra_active']) &&
+             (!('age' in data) || data.age is number) &&
+             (!('gender' in data) || data.gender in ['male', 'female', 'other']) &&
+             (!('weight' in data) || data.weight is number) &&
+             (!('height' in data) || data.height is number) &&
+             (!('goal' in data) || data.goal is string) &&
+             (!('bmi' in data) || data.bmi is number) &&
+             (!('bmr' in data) || data.bmr is number) &&
+             (!('tdee' in data) || data.tdee is number) &&
+             (!('calorieTarget' in data) || data.calorieTarget is number) &&
+             (!('macroTargets' in data) || data.macroTargets is map) &&
+             (!('points' in data) || data.points is number) &&
+             (!('badges' in data) || data.badges is list) &&
+             (!('streak' in data) || data.streak is number);
+    }
+
+    function isValidNutritionLog(data) {
+      return hasRequiredFields(['userId', 'foodName', 'calories', 'protein', 'carbs', 'fats', 'timestamp']) &&
+             data.userId is string &&
+             data.foodName is string && data.foodName.size() > 0 && data.foodName.size() < 200 &&
+             data.calories is number && data.calories >= 0 &&
+             data.protein is number && data.protein >= 0 &&
+             data.carbs is number && data.carbs >= 0 &&
+             data.fats is number && data.fats >= 0 &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidMealPlan(data) {
+      return hasRequiredFields(['userId', 'date', 'breakfast', 'lunch', 'dinner', 'snacks', 'timestamp']) &&
+             data.userId is string &&
+             data.date is string &&
+             data.breakfast is map &&
+             data.lunch is map &&
+             data.dinner is map &&
+             data.snacks is list &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidWorkout(data) {
+      return hasRequiredFields(['userId', 'exerciseName', 'category', 'duration', 'caloriesBurned', 'intensity', 'date']) &&
+             data.userId is string &&
+             data.exerciseName is string &&
+             data.category is string &&
+             data.duration is number && data.duration > 0 &&
+             data.caloriesBurned is number && data.caloriesBurned >= 0 &&
+             data.intensity is string &&
+             data.date is timestamp;
+    }
+
+    function isValidDailyProgress(data) {
+      return hasRequiredFields(['userId', 'date', 'calorieIntake', 'caloriesBurned', 'waterIntake']) &&
+             data.userId is string &&
+             data.date is timestamp &&
+             data.calorieIntake is number && data.calorieIntake >= 0 &&
+             data.caloriesBurned is number && data.caloriesBurned >= 0 &&
+             data.waterIntake is number && data.waterIntake >= 0;
+    }
+
+    function isValidAIAnalysisCache(data) {
+      return hasRequiredFields(['foodName', 'breakdown', 'healthScore', 'riskIndicators', 'timestamp']) &&
+             data.foodName is string &&
+             data.breakdown is string &&
+             data.healthScore is number &&
+             data.riskIndicators is string &&
+             data.timestamp is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == 'user' || isAdmin());
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /nutritionLogs/{logId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidNutritionLog(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidNutritionLog(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /mealPlans/{planId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidMealPlan(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidMealPlan(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /workouts/{workoutId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidWorkout(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidWorkout(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /dailyProgress/{progressId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidDailyProgress(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidDailyProgress(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /aiAnalysisCache/{cacheId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidAIAnalysisCache(request.resource.data);
+      allow update: if isAdmin() && isValidAIAnalysisCache(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /hydrationLogs/{logId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidHydrationLog(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidHydrationLog(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /sleepLogs/{logId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidSleepLog(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin()) && isValidSleepLog(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /communityPosts/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && isValidCommunityPost(request.resource.data);
+      allow update: if isAuthenticated() && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']) || (resource.data.userId == request.auth.uid && isValidCommunityPost(request.resource.data)));
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+  }
+
+  // ===============================================================
+  // Domain Validators
+  // ===============================================================
+
+  function isValidHydrationLog(data) {
+    return hasRequiredFields(['userId', 'amount', 'timestamp']) &&
+           data.userId is string &&
+           data.amount is number && data.amount > 0 &&
+           data.timestamp is timestamp;
+  }
+
+  function isValidSleepLog(data) {
+    return hasRequiredFields(['userId', 'date', 'duration', 'quality', 'recoveryScore', 'timestamp']) &&
+           data.userId is string &&
+           data.date is string &&
+           data.duration is number && data.duration >= 0 &&
+           data.quality is number && data.quality >= 0 &&
+           data.recoveryScore is number && data.recoveryScore >= 0 &&
+           data.timestamp is timestamp;
+  }
+
+  function isValidCommunityPost(data) {
+    return hasRequiredFields(['userId', 'userName', 'content', 'likes', 'timestamp']) &&
+           data.userId is string &&
+           data.userName is string && data.userName.size() < 100 &&
+           data.content is string && data.content.size() < 2000 &&
+           data.likes is number &&
+           data.timestamp is timestamp;
+  }
+}

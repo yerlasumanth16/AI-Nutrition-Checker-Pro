@@ -1,0 +1,221 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and subscription information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "profilePhoto": { "type": "string" },
+        "subscriptionType": { "type": "string", "enum": ["free", "premium"] },
+        "subscriptionId": { "type": "string" },
+        "subscriptionStatus": { "type": "string", "enum": ["active", "cancelled", "expired"] },
+        "subscriptionStart": { "type": "string", "format": "date-time" },
+        "subscriptionEnd": { "type": "string", "format": "date-time" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "dietaryRestrictions": { 
+          "type": "array", 
+          "items": { "type": "string" },
+          "description": "List of dietary restrictions (e.g., vegetarian, vegan, gluten-free)"
+        },
+        "fitnessLevel": { 
+          "type": "string", 
+          "enum": ["sedentary", "lightly_active", "moderately_active", "very_active", "extra_active"],
+          "description": "User's current fitness level"
+        },
+        "age": { "type": "number" },
+        "gender": { "type": "string", "enum": ["male", "female", "other"] },
+        "weight": { "type": "number" },
+        "height": { "type": "number" },
+        "goal": { "type": "string" },
+        "bmi": { "type": "number" },
+        "bmr": { "type": "number" },
+        "tdee": { "type": "number" },
+        "calorieTarget": { "type": "number" },
+        "macroTargets": {
+          "type": "object",
+          "properties": {
+            "protein": { "type": "number" },
+            "carbs": { "type": "number" },
+            "fats": { "type": "number" }
+          }
+        },
+        "points": { "type": "number" },
+        "badges": { "type": "array", "items": { "type": "string" } },
+        "streak": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "subscriptionType"]
+    },
+    "NutritionLog": {
+      "title": "NutritionLog",
+      "description": "Log of food items consumed",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "foodName": { "type": "string" },
+        "calories": { "type": "number" },
+        "protein": { "type": "number" },
+        "carbs": { "type": "number" },
+        "fats": { "type": "number" },
+        "fiber": { "type": "number" },
+        "sugar": { "type": "number" },
+        "micronutrients": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "foodName", "calories", "protein", "carbs", "fats", "timestamp"]
+    },
+    "MealPlan": {
+      "title": "MealPlan",
+      "description": "Planned meals for a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "mealType": { "type": "string" },
+        "foodItems": { "type": "string" },
+        "totalCalories": { "type": "number" },
+        "totalProtein": { "type": "number" },
+        "totalCarbs": { "type": "number" },
+        "totalFats": { "type": "number" }
+      },
+      "required": ["userId", "date", "mealType", "foodItems", "totalCalories", "totalProtein", "totalCarbs", "totalFats"]
+    },
+    "Workout": {
+      "title": "Workout",
+      "description": "Log of physical exercises",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "exerciseName": { "type": "string" },
+        "category": { "type": "string" },
+        "duration": { "type": "number" },
+        "caloriesBurned": { "type": "number" },
+        "intensity": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "exerciseName", "category", "duration", "caloriesBurned", "intensity", "date"]
+    },
+    "DailyProgress": {
+      "title": "DailyProgress",
+      "description": "Daily summary of health metrics",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "calorieIntake": { "type": "number" },
+        "caloriesBurned": { "type": "number" },
+        "weight": { "type": "number" },
+        "waterIntake": { "type": "number" }
+      },
+      "required": ["userId", "date", "calorieIntake", "caloriesBurned", "waterIntake"]
+    },
+    "AIAnalysisCache": {
+      "title": "AIAnalysisCache",
+      "description": "Cached AI analysis of food items",
+      "type": "object",
+      "properties": {
+        "foodName": { "type": "string" },
+        "breakdown": { "type": "string" },
+        "healthScore": { "type": "number" },
+        "riskIndicators": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["foodName", "breakdown", "healthScore", "riskIndicators", "timestamp"]
+    },
+    "HydrationLog": {
+      "title": "HydrationLog",
+      "description": "Log of water intake",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "timestamp"]
+    },
+    "SleepLog": {
+      "title": "SleepLog",
+      "description": "Log of sleep duration and quality",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string" },
+        "duration": { "type": "number" },
+        "quality": { "type": "number" },
+        "recoveryScore": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "date", "duration", "quality", "recoveryScore", "timestamp"]
+    },
+    "HabitLog": {
+      "title": "HabitLog",
+      "description": "Log of daily habits",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "habitId": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "date": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "habitId", "completed", "date", "timestamp"]
+    },
+    "CommunityPost": {
+      "title": "CommunityPost",
+      "description": "Post shared in the community feed",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "content": { "type": "string" },
+        "likes": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "content", "likes", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile document"
+    },
+    "/nutritionLogs/{logId}": {
+      "schema": "NutritionLog",
+      "description": "Log of food items consumed"
+    },
+    "/mealPlans/{planId}": {
+      "schema": "MealPlan",
+      "description": "Planned meals for a user"
+    },
+    "/workouts/{workoutId}": {
+      "schema": "Workout",
+      "description": "Log of physical exercises"
+    },
+    "/dailyProgress/{progressId}": {
+      "schema": "DailyProgress",
+      "description": "Daily summary of health metrics"
+    },
+    "/aiAnalysisCache/{cacheId}": {
+      "schema": "AIAnalysisCache",
+      "description": "Cached AI analysis of food items"
+    },
+    "/hydrationLogs/{logId}": {
+      "schema": "HydrationLog",
+      "description": "Log of water intake"
+    },
+    "/sleepLogs/{logId}": {
+      "schema": "SleepLog",
+      "description": "Log of sleep duration and quality"
+    },
+    "/habitLogs/{logId}": {
+      "schema": "HabitLog",
+      "description": "Log of daily habits"
+    },
+    "/communityPosts/{postId}": {
+      "schema": "CommunityPost",
+      "description": "Post shared in the community feed"
+    }
+  }
+}

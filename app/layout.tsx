@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   description: "Instant nutritional insights for any food item or image. No account required.",
 };
 
+import { AuthProvider } from "../lib/AuthContext";
+
 export default function RootLayout({
   children,
 }: {
@@ -17,7 +19,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
