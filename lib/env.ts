@@ -1,8 +1,8 @@
-const requiredServerEnvs: string[] = [];
+// Environment validation
+// Note: AI features now use Vercel AI Gateway which doesn't require an API key
 
-const requiredClientEnvs = [
-  "NEXT_PUBLIC_OPENAI_API_KEY",
-];
+const requiredServerEnvs: string[] = [];
+const requiredClientEnvs: string[] = [];
 
 export function validateEnv() {
   const missingEnvs: string[] = [];
@@ -21,8 +21,8 @@ export function validateEnv() {
 
   if (missingEnvs.length > 0) {
     console.warn(
-      "⚠️ Missing environment variable: NEXT_PUBLIC_OPENAI_API_KEY\n" +
-      "You can add your OpenAI API key in Settings to enable AI features."
+      "⚠️ Missing environment variables:\n" +
+      missingEnvs.join("\n")
     );
   }
 }
@@ -31,5 +31,7 @@ export function validateEnv() {
 validateEnv();
 
 export const env = {
-  NEXT_PUBLIC_OPENAI_API_KEY: process.env.NEXT_PUBLIC_OPENAI_API_KEY || "",
+  // Supabase
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
 };

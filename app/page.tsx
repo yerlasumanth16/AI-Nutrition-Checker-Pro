@@ -11,7 +11,7 @@ import {
   Moon, Trophy, Users, Mic, Coffee, Sparkles, ArrowLeftRight, ListTodo, Lock
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import OpenAI from "openai";
+
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { 
@@ -484,79 +484,31 @@ export default function Home() {
     }
 
     try {
-      const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-      if (!apiKey) throw new Error("OpenAI API key is not configured. Please add your API key in Settings.");
-
-      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
-      const prompt = `
-Analyze the following food item or image and return a comprehensive professional health-analysis diagnostic report in ONLY valid JSON format.
-The report must feel like a clinical nutrition document.
-
-User Profile:
-- Age: ${profile?.age || 'N/A'}
-- Gender: ${profile?.gender || 'N/A'}
-- Weight: ${profile?.weight || 'N/A'}kg
-- Goal: ${profile?.goal || 'balanced'}
-- Mode: ${activeMode.toUpperCase()}
-- Dietary Restrictions: ${profile?.dietaryRestrictions?.join(', ') || 'None'}
-- Fitness Level: ${profile?.fitnessLevel || 'N/A'}
-
-The user's current health goal is: ${profile?.goal || 'balanced'}. 
-Current Mode: ${activeMode === 'gym' ? 'GYM/FITNESS (Focus on protein, recovery, muscle gain)' : 'DIET/HEALTH (Focus on weight loss, sugar/sodium control, fiber)'}.
-Tailor the analysis, risks, and suggestions to this specific context.
-
-Required JSON structure:
-{
-  "foodName": string,
-  "portionEstimation": string,
-  "analysisDate": string,
-  "nutritionScore": { "score": number, "level": string, "explanation": string },
-  "macronutrients": [ { "name": string, "value": number, "unit": string, "rdi": number, "percentage": number, "status": string } ],
-  "micronutrients": [ { "name": string, "value": number, "unit": string, "rdi": number, "percentage": number, "status": string } ],
-  "risks": [ { "name": string, "explanation": string, "severity": string, "consequences": string } ],
-  "metabolicImpact": { "glycemicImpact": string, "energyDensity": string, "metabolicLoad": string, "nutrientDensityScore": number, "analysis": string },
-  "healthInsights": { "weightManagement": string, "muscleBuilding": string, "heartHealth": string, "diabetesSuitability": string, "fitnessCompatibility": string },
-  "clinicalSummary": string,
-  "expertFeatures": { "mealRating": string, "classification": string, "longTermImpact": string, "suggestions": string[], "alternatives": string[] }
-}
-`;
-      
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
-      
-      if (image) {
-        messages.push({
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: image.data } }
-          ]
-        });
-      } else {
-        messages.push({
-          role: "user",
-          content: `${prompt}\n\nFood item to analyze: ${query}`
-        });
-      }
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages,
-        response_format: { type: "json_object" }
+      // Call server-side API route (uses Vercel AI Gateway - no API key needed)
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query,
+          image,
+          profile,
+          activeMode,
+        }),
       });
 
-      const text = response.choices[0]?.message?.content;
-      if (!text) throw new Error("Empty response from AI");
-
-      let result: AnalysisResult;
-      try {
-        const cleanedText = text.replace(/```json/g, "").replace(/```/g, "").trim();
-        result = JSON.parse(cleanedText);
-        result.id = Math.random().toString(36).substr(2, 9);
-        result.timestamp = new Date().toISOString();
-        result.goalContext = userGoal;
-      } catch (e) {
-        throw new Error("Failed to parse nutritional data");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to analyze food");
       }
+
+      const data = await response.json();
+      
+      const result: AnalysisResult = {
+        ...data,
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: new Date().toISOString(),
+        goalContext: userGoal,
+      };
 
       setAnalysis(result);
       
@@ -608,57 +560,19 @@ Required JSON structure:
     setError(null);
 
     try {
-      const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-      if (!apiKey) throw new Error("OpenAI API key is not configured. Please add your API key in Settings.");
-
-      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
-      const prompt = `
-Generate a 1-day personalized meal plan based on the following user profile:
-- Age: ${profile.age}
-- Gender: ${profile.gender}
-- Weight: ${profile.weight}kg
-- Height: ${profile.height}cm
-- Goal: ${profile.goal}
-- Activity Level: ${profile.activityLevel}
-- Calorie Target: ${profile.calorieTarget} kcal
-- Macro Targets: Protein ${profile.macroTargets.protein}g, Carbs ${profile.macroTargets.carbs}g, Fat ${profile.macroTargets.fat}g
-- Mode: ${activeMode.toUpperCase()}
-- Dietary Restrictions: ${profile.dietaryRestrictions?.join(', ') || 'None'}
-- Fitness Level: ${profile.fitnessLevel || 'N/A'}
-
-The plan should include Breakfast, Lunch, Dinner, and 2 Snacks.
-For each meal, provide:
-- name
-- calories
-- protein
-- carbs
-- fat
-- ingredients (list of strings)
-- alternatives (list of strings)
-
-Return ONLY valid JSON in this format:
-{
-  "date": "${new Date().toISOString().split('T')[0]}",
-  "breakfast": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "ingredients": string[], "alternatives": string[] },
-  "lunch": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "ingredients": string[], "alternatives": string[] },
-  "dinner": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "ingredients": string[], "alternatives": string[] },
-  "snacks": [
-    { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "ingredients": string[], "alternatives": string[] }
-  ]
-}
-`;
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" }
+      // Call server-side API route (uses Vercel AI Gateway - no API key needed)
+      const response = await fetch("/api/meal-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile, activeMode }),
       });
 
-      const text = response.choices[0]?.message?.content;
-      if (!text) throw new Error("Empty response from AI");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to generate meal plan");
+      }
 
-      const cleanedText = text.replace(/```json/g, "").replace(/```/g, "").trim();
-      const newPlan: DailyMealPlan = JSON.parse(cleanedText);
+      const newPlan: DailyMealPlan = await response.json();
       
       if (firebaseUser) {
         try {
@@ -693,33 +607,26 @@ Return ONLY valid JSON in this format:
     setIsChatLoading(true);
 
     try {
-      const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-      if (!apiKey) throw new Error("OpenAI API key is not configured. Please add your API key in Settings.");
-
-      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
-      
-      // Provide context from current analysis if available
-      const context = analysis ? `Current meal being discussed: ${analysis.foodName}. Nutrition Score: ${analysis.nutritionScore.score}. Summary: ${analysis.clinicalSummary}` : "No specific meal is currently being analyzed.";
-      
-      const systemPrompt = `You are a professional AI Nutrition & Fitness Coach. 
-Context: ${context}
-User Profile: ${JSON.stringify(profile)}
-Dietary Restrictions: ${profile?.dietaryRestrictions?.join(', ') || 'None'}
-Fitness Level: ${profile?.fitnessLevel || 'N/A'}
-Current Mode: ${activeMode.toUpperCase()}
-User History Summary: ${history.length} meals tracked recently. Total calories today: ${dailyStats.calories}. Calories burned today: ${dailyStats.caloriesBurned}.
-
-Answer the user's question accurately and professionally. Provide specific advice based on their goal (${profile?.goal}) and mode (${activeMode}).`;
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMsg }
-        ]
+      // Call server-side API route (uses Vercel AI Gateway - no API key needed)
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userMsg,
+          profile,
+          activeMode,
+          analysis,
+          history,
+          dailyStats,
+        }),
       });
 
-      setChatMessages(prev => [...prev, { role: 'assistant', content: response.choices[0]?.message?.content || "I'm sorry, I couldn't process that." }]);
+      if (!response.ok) {
+        throw new Error("Failed to get response");
+      }
+
+      const data = await response.json();
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.response || "I'm sorry, I couldn't process that." }]);
     } catch (err) {
       setChatMessages(prev => [...prev, { role: 'assistant', content: "Error connecting to AI assistant." }]);
     } finally {
@@ -1147,17 +1054,18 @@ Answer the user's question accurately and professionally. Provide specific advic
 
     const handleVoiceQuery = async (query: string) => {
       try {
-        const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-        if (!apiKey) throw new Error("OpenAI API key is not configured");
-        const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
-        const res = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: "You are a helpful health assistant. Keep answers under 50 words." },
-            { role: "user", content: query }
-          ]
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: query,
+            profile,
+            activeMode,
+          }),
         });
-        const reply = res.choices[0]?.message?.content || "I couldn't process that.";
+        if (!res.ok) throw new Error("Failed to get response");
+        const data = await res.json();
+        const reply = data.response || "I couldn't process that.";
         setResponse(reply);
         speak(reply);
       } catch (e) {
@@ -1221,19 +1129,18 @@ Answer the user's question accurately and professionally. Provide specific advic
       if (!food1 || !food2) return;
       setComparing(true);
       try {
-        const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-        if (!apiKey) throw new Error("OpenAI API key is not configured");
-        const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
-        const prompt = `Compare ${food1} vs ${food2}. Provide calories, protein, carbs, fat, and a health score (0-100) for each. Also give a recommendation on which is better for ${profile?.goal || 'balanced diet'}. Return ONLY JSON: { "food1": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "score": number }, "food2": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "score": number }, "recommendation": string }`;
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [{ role: "user", content: prompt }],
-          response_format: { type: "json_object" }
+        const res = await fetch("/api/compare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            food1,
+            food2,
+            goal: profile?.goal || "balanced diet",
+          }),
         });
-        const text = response.choices[0]?.message?.content;
-        if (text) {
-          setComparison(JSON.parse(text));
-        }
+        if (!res.ok) throw new Error("Failed to compare foods");
+        const data = await res.json();
+        setComparison(data);
       } catch (e) {
         console.error(e);
       } finally {
