@@ -1,5 +1,4 @@
 import { generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -27,8 +26,9 @@ User History Summary: ${history?.length || 0} meals tracked recently. Total calo
 
 Answer the user's question accurately and professionally. Provide specific advice based on their goal (${profile?.goal || "balanced"}) and mode (${activeMode || "diet"}).`;
 
+    // Use Vercel AI Gateway with model string (AI SDK 6)
     const result = await generateText({
-      model: openai("gpt-4o-mini"),
+      model: "openai/gpt-4o-mini",
       system: systemPrompt,
       prompt: message,
     });

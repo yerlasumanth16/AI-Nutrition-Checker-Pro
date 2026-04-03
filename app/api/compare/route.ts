@@ -1,5 +1,4 @@
 import { generateText, Output } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { NextResponse } from "next/server";
 
@@ -36,8 +35,9 @@ export async function POST(req: Request) {
 
     const prompt = `Compare ${food1} vs ${food2}. Provide calories, protein, carbs, fat, and a health score (0-100) for each. Also give a recommendation on which is better for ${goal || "balanced diet"}.`;
 
+    // Use Vercel AI Gateway with model string (AI SDK 6)
     const result = await generateText({
-      model: openai("gpt-4o-mini"),
+      model: "openai/gpt-4o-mini",
       prompt,
       output: Output.object({ schema: FoodComparisonSchema }),
     });
