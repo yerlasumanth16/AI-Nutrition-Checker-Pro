@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cashfree, CASHFREE_CONFIG } from "../../../../lib/cashfree";
+import { Cashfree, CASHFREE_CONFIG } from "../../../../lib/cashfree";
 import { verifyToken } from "../../../../lib/auth";
 import { adminDb } from "../../../../lib/firebase-admin";
 
@@ -37,14 +37,14 @@ export async function POST(req: Request) {
         customer_phone: userData?.phone || "9999999999",
       },
       order_meta: {
-        return_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard?order_id={order_id}&payment_status={payment_status}`,
+        return_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/premium?order_id={order_id}&payment_status={payment_status}`,
         notify_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/premium/webhook`,
         payment_methods: "cc,dc,upi,nb,app,paylater,emi", // All payment methods
       },
       order_note: "NutriAI Premium Subscription",
     };
 
-    const response = await cashfree.PGCreateOrder(orderRequest);
+    const response = await Cashfree.PGCreateOrder(orderRequest);
 
     if (response.data) {
       // Store order reference in Firestore

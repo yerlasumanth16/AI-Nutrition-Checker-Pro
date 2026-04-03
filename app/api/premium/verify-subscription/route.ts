@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "../../../../lib/firebase-admin";
 import { verifyToken } from "../../../../lib/auth";
-import { cashfree } from "../../../../lib/cashfree";
+import { Cashfree } from "../../../../lib/cashfree";
 
 export async function POST(req: Request) {
   try {
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     }
 
     // Verify order status with Cashfree
-    const orderResponse = await cashfree.PGFetchOrder(orderId);
+    const orderResponse = await Cashfree.PGFetchOrder(orderId);
     const orderData = orderResponse.data;
 
     if (!orderData) {
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     }
 
     // Get payments for this order
-    const paymentsResponse = await cashfree.PGOrderFetchPayments(orderId);
+    const paymentsResponse = await Cashfree.PGOrderFetchPayments(orderId);
     const payments = paymentsResponse.data || [];
 
     // Find successful payment

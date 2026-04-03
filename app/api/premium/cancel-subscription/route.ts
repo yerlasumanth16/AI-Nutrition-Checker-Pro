@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "../../../../lib/firebase-admin";
 import { verifyToken } from "../../../../lib/auth";
-import { cashfree } from "../../../../lib/cashfree";
+import { Cashfree } from "../../../../lib/cashfree";
 
 export async function POST(req: Request) {
   try {
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
           refund_note: "Subscription cancelled within 24 hours",
         };
 
-        await cashfree.PGOrderCreateRefund(userData.subscriptionId, refundRequest);
+        await Cashfree.PGOrderCreateRefund(userData.subscriptionId, refundRequest);
 
         await userRef.update({
           subscriptionType: "free",
