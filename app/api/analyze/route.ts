@@ -1,4 +1,5 @@
 import { generateText, Output } from "ai";
+import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { NextResponse } from "next/server";
 
@@ -117,7 +118,7 @@ Food item to analyze: ${query || "Food from image"}
     }
 
     const result = await generateText({
-      model: "openai/gpt-4o-mini",
+      model: openai("gpt-4o-mini"),
       messages,
       output: Output.object({ schema: NutritionAnalysisSchema }),
     });

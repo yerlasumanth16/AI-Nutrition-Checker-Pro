@@ -1,4 +1,5 @@
 import { generateText, Output } from "ai";
+import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { NextResponse } from "next/server";
 
@@ -51,7 +52,7 @@ Use the date: ${new Date().toISOString().split("T")[0]}
 `;
 
     const result = await generateText({
-      model: "openai/gpt-4o-mini",
+      model: openai("gpt-4o-mini"),
       prompt,
       output: Output.object({ schema: MealPlanSchema }),
     });
