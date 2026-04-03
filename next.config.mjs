@@ -6,6 +6,9 @@ const nextConfig = {
     buildActivity: false,
     buildActivityPosition: 'bottom-right',
   },
+  turbopack: {
+    root: process.cwd(),
+  },
 };
 
 export default nextConfig;
