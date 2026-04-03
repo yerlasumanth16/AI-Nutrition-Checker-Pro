@@ -11,7 +11,7 @@ import {
   Moon, Trophy, Users, Mic, Coffee, Sparkles, ArrowLeftRight, ListTodo, Lock
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { 
@@ -485,11 +485,10 @@ export default function Home() {
     }
 
     try {
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("Gemini API key is not configured.");
+      const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+      if (!apiKey) throw new Error("OpenAI API key is not configured. Please add your API key in Settings.");
 
-      const ai = new GoogleGenAI({ apiKey });
-      const isUrl = query.startsWith("http");
+      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
       const prompt = `
 Analyze the following food item or image and return a comprehensive professional health-analysis diagnostic report in ONLY valid JSON format.
 The report must feel like a clinical nutrition document.
@@ -523,25 +522,30 @@ Required JSON structure:
 }
 `;
       
-      const parts: any[] = [{ text: prompt }];
+      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+      
       if (image) {
-        parts.push({
-          inlineData: {
-            data: image.data.split(",")[1],
-            mimeType: image.mimeType,
-          },
+        messages.push({
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: image.data } }
+          ]
+        });
+      } else {
+        messages.push({
+          role: "user",
+          content: `${prompt}\n\nFood item to analyze: ${query}`
         });
       }
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: { parts },
-        config: {
-          tools: [{ googleSearch: {} }]
-        }
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages,
+        response_format: { type: "json_object" }
       });
 
-      const text = response.text;
+      const text = response.choices[0]?.message?.content;
       if (!text) throw new Error("Empty response from AI");
 
       let result: AnalysisResult;
@@ -606,10 +610,10 @@ Required JSON structure:
     setError(null);
 
     try {
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("Gemini API key is not configured.");
+      const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+      if (!apiKey) throw new Error("OpenAI API key is not configured. Please add your API key in Settings.");
 
-      const ai = new GoogleGenAI({ apiKey });
+      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
       const prompt = `
 Generate a 1-day personalized meal plan based on the following user profile:
 - Age: ${profile.age}
@@ -646,15 +650,13 @@ Return ONLY valid JSON in this format:
 }
 `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: { parts: [{ text: prompt }] },
-        config: {
-          tools: [{ googleSearch: {} }]
-        }
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" }
       });
 
-      const text = response.text;
+      const text = response.choices[0]?.message?.content;
       if (!text) throw new Error("Empty response from AI");
 
       const cleanedText = text.replace(/```json/g, "").replace(/```/g, "").trim();
@@ -693,16 +695,15 @@ Return ONLY valid JSON in this format:
     setIsChatLoading(true);
 
     try {
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API key missing");
+      const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+      if (!apiKey) throw new Error("OpenAI API key is not configured. Please add your API key in Settings.");
 
-      const ai = new GoogleGenAI({ apiKey });
+      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
       
       // Provide context from current analysis if available
       const context = analysis ? `Current meal being discussed: ${analysis.foodName}. Nutrition Score: ${analysis.nutritionScore.score}. Summary: ${analysis.clinicalSummary}` : "No specific meal is currently being analyzed.";
       
-      const prompt = `
-You are a professional AI Nutrition & Fitness Coach. 
+      const systemPrompt = `You are a professional AI Nutrition & Fitness Coach. 
 Context: ${context}
 User Profile: ${JSON.stringify(profile)}
 Dietary Restrictions: ${profile?.dietaryRestrictions?.join(', ') || 'None'}
@@ -710,19 +711,17 @@ Fitness Level: ${profile?.fitnessLevel || 'N/A'}
 Current Mode: ${activeMode.toUpperCase()}
 User History Summary: ${history.length} meals tracked recently. Total calories today: ${dailyStats.calories}. Calories burned today: ${dailyStats.caloriesBurned}.
 
-Answer the user's question accurately and professionally. Provide specific advice based on their goal (${profile?.goal}) and mode (${activeMode}).
-User: ${userMsg}
-`;
+Answer the user's question accurately and professionally. Provide specific advice based on their goal (${profile?.goal}) and mode (${activeMode}).`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [{ text: prompt }],
-        config: {
-          tools: [{ googleSearch: {} }]
-        }
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMsg }
+        ]
       });
 
-      setChatMessages(prev => [...prev, { role: 'assistant', content: response.text || "I'm sorry, I couldn't process that." }]);
+      setChatMessages(prev => [...prev, { role: 'assistant', content: response.choices[0]?.message?.content || "I'm sorry, I couldn't process that." }]);
     } catch (err) {
       setChatMessages(prev => [...prev, { role: 'assistant', content: "Error connecting to AI assistant." }]);
     } finally {
@@ -1150,15 +1149,17 @@ User: ${userMsg}
 
     const handleVoiceQuery = async (query: string) => {
       try {
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-        if (!apiKey) throw new Error("API key missing");
-        const ai = new GoogleGenAI({ apiKey });
-        const res = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: `You are a helpful health assistant. Answer this query concisely: ${query}`,
-          config: { systemInstruction: "Keep answers under 50 words." }
+        const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+        if (!apiKey) throw new Error("OpenAI API key is not configured");
+        const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+        const res = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "You are a helpful health assistant. Keep answers under 50 words." },
+            { role: "user", content: query }
+          ]
         });
-        const reply = res.text || "I couldn't process that.";
+        const reply = res.choices[0]?.message?.content || "I couldn't process that.";
         setResponse(reply);
         speak(reply);
       } catch (e) {
@@ -1222,21 +1223,18 @@ User: ${userMsg}
       if (!food1 || !food2) return;
       setComparing(true);
       try {
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-        if (!apiKey) throw new Error("API key missing");
-        const ai = new GoogleGenAI({ apiKey });
+        const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+        if (!apiKey) throw new Error("OpenAI API key is not configured");
+        const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
         const prompt = `Compare ${food1} vs ${food2}. Provide calories, protein, carbs, fat, and a health score (0-100) for each. Also give a recommendation on which is better for ${profile?.goal || 'balanced diet'}. Return ONLY JSON: { "food1": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "score": number }, "food2": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "score": number }, "recommendation": string }`;
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: { parts: [{ text: prompt }] },
-          config: {
-            tools: [{ googleSearch: {} }]
-          }
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_object" }
         });
-        const text = response.text;
+        const text = response.choices[0]?.message?.content;
         if (text) {
-          const cleanedText = text.replace(/```json/g, "").replace(/```/g, "").trim();
-          setComparison(JSON.parse(cleanedText));
+          setComparison(JSON.parse(text));
         }
       } catch (e) {
         console.error(e);

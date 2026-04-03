@@ -1,7 +1,7 @@
 const requiredServerEnvs: string[] = [];
 
 const requiredClientEnvs = [
-  "NEXT_PUBLIC_GEMINI_API_KEY",
+  "NEXT_PUBLIC_OPENAI_API_KEY",
 ];
 
 export function validateEnv() {
@@ -20,10 +20,9 @@ export function validateEnv() {
   });
 
   if (missingEnvs.length > 0) {
-    console.error(
-      "❌ Missing required environment variables:\n" +
-      missingEnvs.join("\n") +
-      "\n\nPlease add these to your .env file."
+    console.warn(
+      "⚠️ Missing environment variable: NEXT_PUBLIC_OPENAI_API_KEY\n" +
+      "You can add your OpenAI API key in Settings to enable AI features."
     );
   }
 }
@@ -32,5 +31,5 @@ export function validateEnv() {
 validateEnv();
 
 export const env = {
-  NEXT_PUBLIC_GEMINI_API_KEY: process.env.NEXT_PUBLIC_GEMINI_API_KEY || "",
+  NEXT_PUBLIC_OPENAI_API_KEY: process.env.NEXT_PUBLIC_OPENAI_API_KEY || "",
 };
