@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "../../../../lib/firebase-admin";
+import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+
+// Use service role for webhooks (server-to-server)
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: Request) {
   try {
@@ -37,49 +43,42 @@ export async function POST(req: Request) {
         const customerId = order.customer_details?.customer_id;
 
         if (customerId) {
+          const subscriptionEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          
           // Update user to premium
-          const userRef = adminDb.collection("users").doc(customerId);
-          await userRef.update({
-            subscriptionType: "premium",
-            subscriptionId: order.order_id,
-            subscriptionStatus: "active",
-            subscriptionStart: new Date().toISOString(),
-            subscriptionEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          });
+          await supabaseAdmin
+            .from("profiles")
+            .update({
+              subscription_type: "premium",
+              subscription_status: "active",
+              subscription_end: subscriptionEnd,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", customerId);
 
-          // Record payment
-          await adminDb.collection("payments").add({
-            userId: customerId,
-            cashfreeOrderId: order.order_id,
-            cashfreePaymentId: payment.cf_payment_id,
-            paymentMethod: payment.payment_method?.type || "unknown",
-            amount: order.order_amount,
-            currency: order.order_currency,
-            status: "captured",
-            planType: "Premium Nutrition Pro",
-            createdAt: new Date().toISOString(),
-          });
-
-          // Update order
-          const orderRef = adminDb.collection("orders").doc(order.order_id);
-          await orderRef.update({
-            status: "paid",
-            paymentId: payment.cf_payment_id,
-            paymentMethod: payment.payment_method?.type,
-            paidAt: new Date().toISOString(),
-          });
+          // Update payment record
+          await supabaseAdmin
+            .from("payments")
+            .update({
+              payment_id: payment.cf_payment_id,
+              status: "success",
+              payment_method: payment.payment_method?.type || "unknown",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("order_id", order.order_id);
         }
         break;
 
       case "PAYMENT_FAILED_WEBHOOK":
         const failedOrder = data.order;
         if (failedOrder.order_id) {
-          const orderRef = adminDb.collection("orders").doc(failedOrder.order_id);
-          await orderRef.update({
-            status: "failed",
-            failedAt: new Date().toISOString(),
-            failureReason: data.error_details?.error_description || "Payment failed",
-          });
+          await supabaseAdmin
+            .from("payments")
+            .update({
+              status: "failed",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("order_id", failedOrder.order_id);
         }
         break;
 
@@ -88,28 +87,32 @@ export async function POST(req: Request) {
         if (refund.refund_status === "SUCCESS") {
           const refundOrderId = refund.order_id;
           
-          // Find user by order
-          const orderDoc = await adminDb.collection("orders").doc(refundOrderId).get();
-          const orderData = orderDoc.data();
+          // Get payment record to find user
+          const { data: paymentRecord } = await supabaseAdmin
+            .from("payments")
+            .select("user_id")
+            .eq("order_id", refundOrderId)
+            .single();
 
-          if (orderData?.userId) {
+          if (paymentRecord?.user_id) {
             // Downgrade user to free
-            const userRef = adminDb.collection("users").doc(orderData.userId);
-            await userRef.update({
-              subscriptionType: "free",
-              subscriptionStatus: "refunded",
-            });
+            await supabaseAdmin
+              .from("profiles")
+              .update({
+                subscription_type: "free",
+                subscription_status: "refunded",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", paymentRecord.user_id);
 
-            // Record refund
-            await adminDb.collection("payments").add({
-              userId: orderData.userId,
-              cashfreeOrderId: refundOrderId,
-              cashfreeRefundId: refund.cf_refund_id,
-              amount: -refund.refund_amount,
-              currency: refund.refund_currency,
-              status: "refunded",
-              createdAt: new Date().toISOString(),
-            });
+            // Update payment record
+            await supabaseAdmin
+              .from("payments")
+              .update({
+                status: "refunded",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("order_id", refundOrderId);
           }
         }
         break;

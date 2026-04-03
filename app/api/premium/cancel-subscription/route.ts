@@ -1,54 +1,63 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "../../../../lib/firebase-admin";
-import { verifyToken } from "../../../../lib/auth";
+import { createClient } from "../../../../lib/supabase/server";
 import { Cashfree } from "../../../../lib/cashfree";
 
 export async function POST(req: Request) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    const supabase = await createClient();
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const token = authHeader.split(" ")[1];
-    const decoded = await verifyToken(token);
+    // Get user profile with payment info
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
 
-    if (!decoded) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
+    // Get latest successful payment
+    const { data: latestPayment } = await supabase
+      .from("payments")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("status", "success")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
 
-    const userRef = adminDb.collection("users").doc(decoded.userId);
-    const userDoc = await userRef.get();
-    const userData = userDoc.data();
-
-    if (!userDoc.exists || !userData?.subscriptionId) {
+    if (!profile || profile.subscription_type !== "premium") {
       return NextResponse.json({ error: "No active subscription found" }, { status: 404 });
     }
 
-    // For Cashfree, we handle cancellation by updating the user status
-    // and optionally processing a refund if within refund window
-    const subscriptionStart = userData.subscriptionStart ? new Date(userData.subscriptionStart) : null;
-    const now = new Date();
-    
     // Check if within 24 hours for refund eligibility
-    const refundEligible = subscriptionStart && 
-      (now.getTime() - subscriptionStart.getTime()) < 24 * 60 * 60 * 1000;
+    const paymentTime = latestPayment ? new Date(latestPayment.created_at) : null;
+    const now = new Date();
+    const refundEligible = paymentTime && 
+      (now.getTime() - paymentTime.getTime()) < 24 * 60 * 60 * 1000;
 
-    if (refundEligible && userData.subscriptionId) {
+    if (refundEligible && latestPayment?.order_id) {
       try {
-        // Attempt to process refund
         const refundRequest = {
-          refund_amount: 15, // Full refund
-          refund_id: `refund_${Date.now()}_${decoded.userId.slice(0, 8)}`,
+          refund_amount: 15,
+          refund_id: `refund_${Date.now()}_${user.id.slice(0, 8)}`,
           refund_note: "Subscription cancelled within 24 hours",
         };
 
-        await Cashfree.PGOrderCreateRefund(userData.subscriptionId, refundRequest);
+        await Cashfree.PGOrderCreateRefund(latestPayment.order_id, refundRequest);
 
-        await userRef.update({
-          subscriptionType: "free",
-          subscriptionStatus: "refunded",
-        });
+        await supabase
+          .from("profiles")
+          .update({
+            subscription_type: "free",
+            subscription_status: "refunded",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", user.id);
 
         return NextResponse.json({ 
           success: true, 
@@ -56,14 +65,17 @@ export async function POST(req: Request) {
         });
       } catch (refundError) {
         console.error("Refund error:", refundError);
-        // Continue with cancellation even if refund fails
       }
     }
 
     // Cancel subscription (user keeps access until end date)
-    await userRef.update({
-      subscriptionStatus: "cancelled",
-    });
+    await supabase
+      .from("profiles")
+      .update({
+        subscription_status: "cancelled",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", user.id);
 
     return NextResponse.json({ 
       success: true,

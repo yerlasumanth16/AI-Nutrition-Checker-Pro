@@ -1,29 +1,27 @@
 import { NextResponse } from "next/server";
 import { Cashfree, CASHFREE_CONFIG } from "../../../../lib/cashfree";
-import { verifyToken } from "../../../../lib/auth";
-import { adminDb } from "../../../../lib/firebase-admin";
+import { createClient } from "../../../../lib/supabase/server";
 
 export async function POST(req: Request) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    const supabase = await createClient();
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const token = authHeader.split(" ")[1];
-    const decoded = await verifyToken(token);
-
-    if (!decoded) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
-
-    // Get user details from Firestore
-    const userRef = adminDb.collection("users").doc(decoded.userId);
-    const userDoc = await userRef.get();
-    const userData = userDoc.data();
+    // Get user profile
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
 
     // Generate unique order ID
-    const orderId = `order_${Date.now()}_${decoded.userId.slice(0, 8)}`;
+    const orderId = `order_${Date.now()}_${user.id.slice(0, 8)}`;
 
     // Create order with Cashfree
     const orderRequest = {
@@ -31,15 +29,15 @@ export async function POST(req: Request) {
       order_amount: 15, // ₹15 premium subscription
       order_currency: "INR",
       customer_details: {
-        customer_id: decoded.userId,
-        customer_name: userData?.name || "Customer",
-        customer_email: userData?.email || "",
-        customer_phone: userData?.phone || "9999999999",
+        customer_id: user.id,
+        customer_name: profile?.name || "Customer",
+        customer_email: user.email || "",
+        customer_phone: "9999999999",
       },
       order_meta: {
         return_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/premium?order_id={order_id}&payment_status={payment_status}`,
         notify_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/premium/webhook`,
-        payment_methods: "cc,dc,upi,nb,app,paylater,emi", // All payment methods
+        payment_methods: "cc,dc,upi,nb,app,paylater,emi",
       },
       order_note: "NutriAI Premium Subscription",
     };
@@ -47,15 +45,13 @@ export async function POST(req: Request) {
     const response = await Cashfree.PGCreateOrder(orderRequest);
 
     if (response.data) {
-      // Store order reference in Firestore
-      await adminDb.collection("orders").doc(orderId).set({
-        userId: decoded.userId,
-        orderId: orderId,
+      // Store order in Supabase
+      await supabase.from("payments").insert({
+        user_id: user.id,
+        order_id: orderId,
         amount: 15,
         currency: "INR",
-        status: "created",
-        paymentSessionId: response.data.payment_session_id,
-        createdAt: new Date().toISOString(),
+        status: "pending",
       });
 
       return NextResponse.json({

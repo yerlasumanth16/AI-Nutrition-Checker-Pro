@@ -1,33 +1,28 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "../../../../lib/firebase-admin";
-import { verifyToken } from "../../../../lib/auth";
+import { createClient } from "../../../../lib/supabase/server";
 
 export async function GET(req: Request) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    const supabase = await createClient();
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const token = authHeader.split(" ")[1];
-    const decoded = await verifyToken(token);
+    const { data: payments, error } = await supabase
+      .from("payments")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
 
-    if (!decoded) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    if (error) {
+      throw error;
     }
 
-    const paymentsSnapshot = await adminDb
-      .collection("payments")
-      .where("userId", "==", decoded.userId)
-      .orderBy("createdAt", "desc")
-      .get();
-
-    const payments = paymentsSnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-
-    return NextResponse.json({ payments });
+    return NextResponse.json({ payments: payments || [] });
   } catch (error: any) {
     console.error("Fetch payments error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

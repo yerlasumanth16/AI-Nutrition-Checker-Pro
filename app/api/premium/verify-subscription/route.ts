@@ -1,20 +1,16 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "../../../../lib/firebase-admin";
-import { verifyToken } from "../../../../lib/auth";
+import { createClient } from "../../../../lib/supabase/server";
 import { Cashfree } from "../../../../lib/cashfree";
 
 export async function POST(req: Request) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    const supabase = await createClient();
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const token = authHeader.split(" ")[1];
-    const decoded = await verifyToken(token);
-
-    if (!decoded) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
     }
 
     const { orderId } = await req.json();
@@ -41,36 +37,29 @@ export async function POST(req: Request) {
     );
 
     if (orderData.order_status === "PAID" && successfulPayment) {
-      // Update user status in Firestore
-      const userRef = adminDb.collection("users").doc(decoded.userId);
-      await userRef.update({
-        subscriptionType: "premium",
-        subscriptionId: orderId,
-        subscriptionStatus: "active",
-        subscriptionStart: new Date().toISOString(),
-        subscriptionEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      });
+      const subscriptionEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      
+      // Update user profile in Supabase
+      await supabase
+        .from("profiles")
+        .update({
+          subscription_type: "premium",
+          subscription_status: "active",
+          subscription_end: subscriptionEnd,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
 
-      // Record payment in Firestore
-      await adminDb.collection("payments").add({
-        userId: decoded.userId,
-        cashfreeOrderId: orderId,
-        cashfreePaymentId: successfulPayment.cf_payment_id,
-        paymentMethod: successfulPayment.payment_method?.type || "unknown",
-        amount: orderData.order_amount,
-        currency: orderData.order_currency,
-        status: "captured",
-        planType: "Premium Nutrition Pro",
-        createdAt: new Date().toISOString(),
-      });
-
-      // Update order status
-      await adminDb.collection("orders").doc(orderId).update({
-        status: "paid",
-        paymentId: successfulPayment.cf_payment_id,
-        paymentMethod: successfulPayment.payment_method?.type,
-        paidAt: new Date().toISOString(),
-      });
+      // Update payment record
+      await supabase
+        .from("payments")
+        .update({
+          payment_id: successfulPayment.cf_payment_id,
+          status: "success",
+          payment_method: successfulPayment.payment_method?.type || "unknown",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("order_id", orderId);
 
       return NextResponse.json({
         success: true,
