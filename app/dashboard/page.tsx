@@ -17,7 +17,7 @@ import {
 import { motion } from "motion/react";
 
 export default function DashboardPage() {
-  const { user, firebaseUser, getIdToken } = useAuth();
+  const { user, profile, getIdToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,12 +27,12 @@ export default function DashboardPage() {
       const t = await getIdToken();
       setToken(t);
     };
-    if (firebaseUser) {
+    if (user) {
       fetchToken();
     } else {
       setToken(null);
     }
-  }, [firebaseUser, getIdToken]);
+  }, [user, getIdToken]);
 
   useEffect(() => {
     if (token) {
@@ -48,9 +48,9 @@ export default function DashboardPage() {
   }, [token]);
 
   const stats = [
-    { label: "Plan", value: user?.subscriptionType === "premium" ? "Premium Pro" : "Free Plan", icon: CreditCard },
-    { label: "Status", value: user?.subscriptionStatus || "N/A", icon: CheckCircle2 },
-    { label: "Renews On", value: user?.subscriptionEnd ? new Date(user.subscriptionEnd).toLocaleDateString() : "N/A", icon: Calendar },
+    { label: "Plan", value: profile?.subscriptionType === "premium" ? "Premium Pro" : "Free Plan", icon: CreditCard },
+    { label: "Status", value: profile?.subscriptionStatus || "N/A", icon: CheckCircle2 },
+    { label: "Renews On", value: profile?.subscriptionEnd ? new Date(profile.subscriptionEnd).toLocaleDateString() : "N/A", icon: Calendar },
   ];
 
   return (
@@ -59,7 +59,7 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
-            <h1 className="text-4xl font-bold mb-2">Welcome back, {user?.name}</h1>
+            <h1 className="text-4xl font-bold mb-2">Welcome back, {profile?.name || 'User'}</h1>
             <p className="text-zinc-500">Manage your health journey and subscription status.</p>
           </div>
           <div className="flex gap-4">

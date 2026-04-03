@@ -21,69 +21,14 @@ import {
 } from "recharts";
 import { AnalysisResult, HealthGoal, UserProfile, Workout, ActivityLevel, Gender, DailyMealPlan, HydrationLog, HabitLog, SleepLog, CommunityPost } from "./types";
 
-import { 
-  collection, addDoc, query as firestoreQuery, where, getDocs, limit, orderBy, 
-  serverTimestamp, Timestamp, doc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocFromServer
-} from "firebase/firestore";
-import { db, auth } from "../lib/firebase";
 import { useAuth } from "../lib/AuthContext";
 import { LoginModal } from "../components/LoginModal";
 import PremiumPage from "./premium/page";
 import { PremiumGuard } from "../components/PremiumGuard";
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
-const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
+import { createClient } from "../lib/supabase/client";
 
 export default function Home() {
-  const { user, firebaseUser, signInWithGoogle, logout, loading: authLoading } = useAuth();
+  const { user, profile: authProfile, signInWithGoogle, logout, loading: authLoading, updateUserProfile } = useAuth();
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'analysis' | 'dashboard' | 'analytics' | 'assistant' | 'history' | 'profile' | 'workouts' | 'planner' | 'habits' | 'community' | 'premium'>('analysis');
   const [activeMode, setActiveMode] = useState<'diet' | 'gym'>('diet');
@@ -108,6 +53,7 @@ export default function Home() {
   const [cache, setCache] = useState<Record<string, AnalysisResult>>({});
   
   const userGoal = profile?.goal || 'balanced';
+  const supabase = createClient();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -140,136 +86,143 @@ export default function Home() {
     }
   }, [cache]);
 
-  // Load data from Firestore when logged in
+  // Load profile from auth context
   useEffect(() => {
-    if (!firebaseUser) return;
+    if (authProfile) {
+      setProfile(authProfile as UserProfile);
+    }
+  }, [authProfile]);
 
-    // Load Nutrition Logs
-    const nutritionQuery = firestoreQuery(
-      collection(db, "nutritionLogs"),
-      where("userId", "==", firebaseUser.uid),
-      orderBy("timestamp", "desc"),
-      limit(50)
-    );
-    const unsubNutrition = onSnapshot(nutritionQuery, (snap: any) => {
-      const logs = snap.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
-      })) as any[];
-      setHistory(logs);
-    }, (error) => handleFirestoreError(error, OperationType.GET, "nutritionLogs"));
+  // Load data from Supabase when logged in
+  useEffect(() => {
+    if (!user) return;
 
-    // Load Workouts
-    const workoutQuery = firestoreQuery(
-      collection(db, "workouts"),
-      where("userId", "==", firebaseUser.uid),
-      orderBy("timestamp", "desc"),
-      limit(50)
-    );
-    const unsubWorkouts = onSnapshot(workoutQuery, (snap: any) => {
-      const logs = snap.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
-      })) as any[];
-      setWorkouts(logs);
-    }, (error) => handleFirestoreError(error, OperationType.GET, "workouts"));
-
-    // Load Meal Plans
-    const mealPlanQuery = firestoreQuery(
-      collection(db, "mealPlans"),
-      where("userId", "==", firebaseUser.uid),
-      orderBy("timestamp", "desc"),
-      limit(7)
-    );
-    const unsubMealPlans = onSnapshot(mealPlanQuery, (snap: any) => {
-      const logs = snap.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
-      })) as any[];
-      setMealPlans(logs);
-    }, (error) => handleFirestoreError(error, OperationType.GET, "mealPlans"));
-
-    // Load Hydration Logs
-    const hydrationQuery = firestoreQuery(
-      collection(db, "hydrationLogs"),
-      where("userId", "==", firebaseUser.uid),
-      orderBy("timestamp", "desc"),
-      limit(50)
-    );
-    const unsubHydration = onSnapshot(hydrationQuery, (snap: any) => {
-      const logs = snap.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
-      })) as any[];
-      setHydrationLogs(logs);
-    }, (error) => handleFirestoreError(error, OperationType.GET, "hydrationLogs"));
-
-    // Load Sleep Logs
-    const sleepQuery = firestoreQuery(
-      collection(db, "sleepLogs"),
-      where("userId", "==", firebaseUser.uid),
-      orderBy("timestamp", "desc"),
-      limit(30)
-    );
-    const unsubSleep = onSnapshot(sleepQuery, (snap: any) => {
-      const logs = snap.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
-      })) as any[];
-      setSleepLogs(logs);
-    }, (error) => handleFirestoreError(error, OperationType.GET, "sleepLogs"));
-
-    // Load Community Posts
-    const communityQuery = firestoreQuery(
-      collection(db, "communityPosts"),
-      orderBy("timestamp", "desc"),
-      limit(50)
-    );
-    const unsubCommunity = onSnapshot(communityQuery, (snap: any) => {
-      const logs = snap.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: (doc.data().timestamp as Timestamp)?.toDate().toISOString() || new Date().toISOString()
-      })) as any[];
-      setCommunityPosts(logs);
-    }, (error) => handleFirestoreError(error, OperationType.GET, "communityPosts"));
-
-    const unsubProfile = onSnapshot(doc(db, "users", firebaseUser.uid), (snap: any) => {
-      if (snap.exists()) {
-        setProfile(snap.data() as UserProfile);
+    const loadData = async () => {
+      // Load Nutrition Logs
+      const { data: nutritionData } = await supabase
+        .from("nutrition_logs")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      
+      if (nutritionData) {
+        const logs = nutritionData.map((log: any) => ({
+          id: log.id,
+          ...log.analysis,
+          timestamp: log.created_at
+        }));
+        setHistory(logs);
       }
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`));
+
+      // Load Workouts
+      const { data: workoutData } = await supabase
+        .from("workouts")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      
+      if (workoutData) {
+        const logs = workoutData.map((log: any) => ({
+          id: log.id,
+          name: log.name,
+          duration: log.duration_minutes,
+          caloriesBurned: log.calories_burned,
+          type: log.workout_type,
+          timestamp: log.created_at
+        }));
+        setWorkouts(logs);
+      }
+
+      // Load Meal Plans
+      const { data: mealPlanData } = await supabase
+        .from("meal_plans")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("date", { ascending: false })
+        .limit(7);
+      
+      if (mealPlanData) {
+        const plans = mealPlanData.map((plan: any) => plan.plan_data);
+        setMealPlans(plans);
+      }
+
+      // Load Hydration Logs
+      const { data: hydrationData } = await supabase
+        .from("hydration_logs")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      
+      if (hydrationData) {
+        const logs = hydrationData.map((log: any) => ({
+          id: log.id,
+          amount: log.amount_ml,
+          timestamp: log.created_at
+        }));
+        setHydrationLogs(logs);
+      }
+
+      // Load Sleep Logs
+      const { data: sleepData } = await supabase
+        .from("sleep_logs")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(30);
+      
+      if (sleepData) {
+        const logs = sleepData.map((log: any) => ({
+          id: log.id,
+          hours: log.hours,
+          quality: log.quality,
+          timestamp: log.created_at
+        }));
+        setSleepLogs(logs);
+      }
+
+      // Load Community Posts
+      const { data: communityData } = await supabase
+        .from("community_posts")
+        .select("*, profiles:user_id(display_name, avatar_url)")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      
+      if (communityData) {
+        const posts = communityData.map((post: any) => ({
+          id: post.id,
+          userId: post.user_id,
+          userName: post.profiles?.display_name || "Anonymous",
+          userAvatar: post.profiles?.avatar_url,
+          content: post.content,
+          imageUrl: post.image_url,
+          likes: post.likes || [],
+          timestamp: post.created_at
+        }));
+        setCommunityPosts(posts);
+      }
+    };
+
+    loadData();
+
+    // Set up real-time subscriptions
+    const nutritionChannel = supabase
+      .channel('nutrition_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'nutrition_logs', filter: `user_id=eq.${user.id}` }, () => loadData())
+      .subscribe();
+
+    const workoutChannel = supabase
+      .channel('workout_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workouts', filter: `user_id=eq.${user.id}` }, () => loadData())
+      .subscribe();
 
     return () => {
-      unsubNutrition();
-      unsubWorkouts();
-      unsubMealPlans();
-      unsubHydration();
-      unsubSleep();
-      unsubCommunity();
-      unsubProfile();
+      supabase.removeChannel(nutritionChannel);
+      supabase.removeChannel(workoutChannel);
     };
-  }, [firebaseUser]);
-
-  // Test connection to Firestore
-  useEffect(() => {
-    if (!mounted) return;
-    const testConnection = async () => {
-      try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration.");
-        }
-      }
-    };
-    testConnection();
-  }, [mounted]);
+  }, [user]);
 
   // Save data to localStorage
   useEffect(() => {
@@ -446,41 +399,25 @@ export default function Home() {
 
     const foodName = query.trim().toLowerCase();
 
-    // Check DB cache first
-    if (!image && foodName) {
-      try {
-        // Check cache in Firestore
-        const cacheQuery = firestoreQuery(collection(db, "aiAnalysisCache"), where("foodName", "==", foodName), limit(1));
-        const cacheSnap = await getDocs(cacheQuery);
-        if (!cacheSnap.empty) {
-          const cachedData = cacheSnap.docs[0].data() as AnalysisResult;
-          setAnalysis(cachedData);
-          setLoading(false);
-          
-          // Save to user history if logged in
-          if (firebaseUser) {
-            try {
-              await addDoc(collection(db, "nutritionLogs"), {
-                userId: firebaseUser.uid,
-                foodName: cachedData.foodName,
-                calories: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('calories'))?.value || 0,
-                protein: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('protein'))?.value || 0,
-                carbs: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('carbohydrates'))?.value || 0,
-                fats: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('fat'))?.value || 0,
-                fiber: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('fiber'))?.value || 0,
-                sugar: cachedData.macronutrients.find((m: any) => m.name.toLowerCase().includes('sugar'))?.value || 0,
-                micronutrients: cachedData.micronutrients,
-                timestamp: serverTimestamp()
-              });
-            } catch (error) {
-              handleFirestoreError(error, OperationType.CREATE, "nutritionLogs");
-            }
-          }
-          return;
+    // Check local cache first
+    if (!image && foodName && cache[foodName]) {
+      const cachedData = cache[foodName];
+      setAnalysis(cachedData);
+      setLoading(false);
+      
+      // Save to user history if logged in
+      if (user) {
+        try {
+          await supabase.from("nutrition_logs").insert({
+            user_id: user.id,
+            food_name: cachedData.foodName,
+            analysis: cachedData,
+          });
+        } catch (error) {
+          console.error("Error saving nutrition log:", error);
         }
-      } catch (e) {
-        console.error("Cache check failed", e);
       }
+      return;
     }
 
     try {
@@ -512,34 +449,19 @@ export default function Home() {
 
       setAnalysis(result);
       
-      // Cache the result in Firestore
-      try {
-        await addDoc(collection(db, "aiAnalysisCache"), {
-          ...result,
-          foodName: result.foodName.toLowerCase(),
-          timestamp: serverTimestamp()
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.CREATE, "aiAnalysisCache");
-      }
+      // Cache the result locally
+      setCache(prev => ({ ...prev, [foodName]: result }));
 
       // Save to user history if logged in
-      if (firebaseUser) {
+      if (user) {
         try {
-          await addDoc(collection(db, "nutritionLogs"), {
-            userId: firebaseUser.uid,
-            foodName: result.foodName,
-            calories: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('calories'))?.value || 0,
-            protein: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('protein'))?.value || 0,
-            carbs: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('carbohydrates'))?.value || 0,
-            fats: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('fat'))?.value || 0,
-            fiber: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('fiber'))?.value || 0,
-            sugar: result.macronutrients.find((m: any) => m.name.toLowerCase().includes('sugar'))?.value || 0,
-            micronutrients: result.micronutrients,
-            timestamp: serverTimestamp()
+          await supabase.from("nutrition_logs").insert({
+            user_id: user.id,
+            food_name: result.foodName,
+            analysis: result,
           });
         } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, "nutritionLogs");
+          console.error("Error saving nutrition log:", error);
         }
       }
     } catch (err: any) {
@@ -574,15 +496,15 @@ export default function Home() {
 
       const newPlan: DailyMealPlan = await response.json();
       
-      if (firebaseUser) {
+      if (user) {
         try {
-          await addDoc(collection(db, "mealPlans"), {
-            userId: firebaseUser.uid,
-            ...newPlan,
-            timestamp: serverTimestamp()
+          await supabase.from("meal_plans").upsert({
+            user_id: user.id,
+            date: newPlan.date,
+            plan_data: newPlan,
           });
         } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, "mealPlans");
+          console.error("Error saving meal plan:", error);
         }
       }
 
@@ -879,18 +801,11 @@ export default function Home() {
         streak: profile?.streak || 0
       };
 
-      if (firebaseUser) {
+      if (user) {
         try {
-          await setDoc(doc(db, "users", firebaseUser.uid), {
-            ...newProfile,
-            name: firebaseUser.displayName || 'User',
-            email: firebaseUser.email,
-            subscriptionType: user?.subscriptionType || 'free',
-            role: 'user',
-            updatedAt: serverTimestamp()
-          }, { merge: true });
+          await updateUserProfile(newProfile);
         } catch (error) {
-          handleFirestoreError(error, OperationType.WRITE, `users/${firebaseUser.uid}`);
+          console.error("Error saving profile:", error);
         }
       }
       
@@ -1199,21 +1114,21 @@ export default function Home() {
     const addPost = async () => {
       if (!postContent.trim()) return;
       const newPost: Partial<CommunityPost> = {
-        userId: firebaseUser?.uid || 'guest',
-        userName: firebaseUser?.displayName || (profile?.gender === 'male' ? 'John Doe' : 'Jane Doe'),
+        userId: user?.id || 'guest',
+        userName: user?.user_metadata?.full_name || (profile?.gender === 'male' ? 'John Doe' : 'Jane Doe'),
         content: postContent,
         timestamp: new Date().toISOString(),
-        likes: 0
+        likes: []
       };
       
-      if (firebaseUser) {
+      if (user) {
         try {
-          await addDoc(collection(db, "communityPosts"), {
-            ...newPost,
-            timestamp: serverTimestamp()
+          await supabase.from("community_posts").insert({
+            user_id: user.id,
+            content: postContent,
           });
         } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, "communityPosts");
+          console.error("Error creating post:", error);
         }
       } else {
         setCommunityPosts([{ id: Math.random().toString(36).substr(2, 9), ...newPost } as CommunityPost, ...communityPosts]);
@@ -1328,15 +1243,14 @@ export default function Home() {
 
     const addHydration = async (amount: number) => {
       const newLog = { timestamp: new Date().toISOString(), amount };
-      if (firebaseUser) {
+      if (user) {
         try {
-          await addDoc(collection(db, "hydrationLogs"), {
-            userId: firebaseUser.uid,
-            ...newLog,
-            timestamp: serverTimestamp()
+          await supabase.from("hydration_logs").insert({
+            user_id: user.id,
+            amount_ml: amount,
           });
         } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, "hydrationLogs");
+          console.error("Error adding hydration:", error);
         }
       } else {
         setHydrationLogs([newLog, ...hydrationLogs]);
@@ -1347,15 +1261,15 @@ export default function Home() {
       const recoveryScore = Math.round((duration / 8) * 50 + (quality / 10) * 50);
       const newLog: SleepLog = { date: today, duration, quality, recoveryScore };
       
-      if (firebaseUser) {
+      if (user) {
         try {
-          await setDoc(doc(db, "sleepLogs", `${firebaseUser.uid}_${today}`), {
-            userId: firebaseUser.uid,
-            ...newLog,
-            timestamp: serverTimestamp()
+          await supabase.from("sleep_logs").insert({
+            user_id: user.id,
+            hours: duration,
+            quality: quality.toString(),
           });
         } catch (error) {
-          handleFirestoreError(error, OperationType.WRITE, `sleepLogs/${firebaseUser.uid}_${today}`);
+          console.error("Error adding sleep log:", error);
         }
       } else {
         setSleepLogs([newLog, ...sleepLogs.filter(l => l.date !== today)]);
@@ -1632,15 +1546,17 @@ export default function Home() {
         caloriesBurned
       };
 
-      if (firebaseUser) {
+      if (user) {
         try {
-          await addDoc(collection(db, "workouts"), {
-            userId: firebaseUser.uid,
-            ...newWorkout,
-            timestamp: serverTimestamp()
+          await supabase.from("workouts").insert({
+            user_id: user.id,
+            name: workoutType,
+            workout_type: workoutType,
+            duration_minutes: duration,
+            calories_burned: caloriesBurned,
           });
         } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, "workouts");
+          console.error("Error adding workout:", error);
         }
       } else {
         setWorkouts([{ id: Math.random().toString(36).substr(2, 9), ...newWorkout } as Workout, ...workouts]);
@@ -1704,11 +1620,11 @@ export default function Home() {
                   </div>
                   <button 
                     onClick={async () => {
-                      if (firebaseUser) {
+                      if (user) {
                         try {
-                          await deleteDoc(doc(db, "workouts", w.id));
+                          await supabase.from("workouts").delete().eq("id", w.id);
                         } catch (error) {
-                          handleFirestoreError(error, OperationType.DELETE, `workouts/${w.id}`);
+                          console.error("Error deleting workout:", error);
                         }
                       } else {
                         setWorkouts(workouts.filter(item => item.id !== w.id));
@@ -1781,7 +1697,7 @@ export default function Home() {
         </nav>
 
         <div className="mt-auto pt-6 border-t border-zinc-900">
-          {firebaseUser ? (
+          {user ? (
             <div className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/50 border border-zinc-800">
               <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
                 <User className="w-4 h-4 text-zinc-400" />
@@ -1859,7 +1775,7 @@ export default function Home() {
                   </form>
                   {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-start gap-3 text-sm"><AlertCircle className="w-5 h-5 shrink-0" /><p>{error}</p></div>}
                   
-                  {!firebaseUser && (
+                  {!user && (
                     <motion.div 
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -2302,7 +2218,7 @@ export default function Home() {
                     <h1 className="text-4xl font-bold tracking-tight text-white">User <span className="text-emerald-500">Profile</span></h1>
                     <p className="text-zinc-400">Manage your body metrics and fitness settings.</p>
                   </div>
-                  {firebaseUser && (
+                  {user && (
                     <button 
                       onClick={() => logout()} 
                       className="flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 transition-all"

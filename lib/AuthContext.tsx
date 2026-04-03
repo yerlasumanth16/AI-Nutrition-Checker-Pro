@@ -32,7 +32,8 @@ interface User {
 }
 
 interface AuthContextType {
-  user: User | null;
+  user: SupabaseUser | null;
+  profile: any | null;
   supabaseUser: SupabaseUser | null;
   session: Session | null;
   signInWithGoogle: () => Promise<void>;
@@ -42,6 +43,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   loading: boolean;
   getIdToken: () => Promise<string | null>;
+  updateUserProfile: (profileData: any) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -63,7 +65,7 @@ function profileToUser(profile: UserProfile): User {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<any | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(initialSession);
         setSupabaseUser(initialSession.user);
         const userProfile = await fetchUserProfile(initialSession.user.id, initialSession.user);
-        setUser(userProfile);
+        setProfile(userProfile);
       }
       
       setLoading(false);
@@ -138,9 +140,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (newSession?.user) {
           const userProfile = await fetchUserProfile(newSession.user.id, newSession.user);
-          setUser(userProfile);
+          setProfile(userProfile);
         } else {
-          setUser(null);
+          setProfile(null);
         }
 
         setLoading(false);
@@ -208,9 +210,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("Error signing out:", error);
       throw error;
     }
-    setUser(null);
+    setProfile(null);
     setSupabaseUser(null);
     setSession(null);
+  };
+
+  const updateUserProfile = async (profileData: any) => {
+    if (!supabaseUser) return;
+    
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        ...profileData,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", supabaseUser.id);
+
+    if (error) {
+      console.error("Error updating profile:", error);
+      throw error;
+    }
+
+    // Refetch profile
+    const updatedProfile = await fetchUserProfile(supabaseUser.id, supabaseUser);
+    setProfile(updatedProfile);
   };
 
   const getIdToken = async () => {
@@ -221,7 +244,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: supabaseUser,
+        profile,
         supabaseUser,
         session,
         signInWithGoogle,
@@ -231,6 +255,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         loading,
         getIdToken,
+        updateUserProfile,
       }}
     >
       {children}

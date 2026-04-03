@@ -31,7 +31,7 @@ declare global {
 }
 
 export default function PremiumPage() {
-  const { user, firebaseUser, getIdToken } = useAuth();
+  const { user, profile, getIdToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -46,12 +46,12 @@ export default function PremiumPage() {
       const t = await getIdToken();
       setToken(t);
     };
-    if (firebaseUser) {
+    if (user) {
       fetchToken();
     } else {
       setToken(null);
     }
-  }, [firebaseUser, getIdToken]);
+  }, [user, getIdToken]);
 
   useEffect(() => {
     if (user && token) {
@@ -289,7 +289,7 @@ export default function PremiumPage() {
               </div>
             </motion.div>
 
-            {user?.subscriptionType === "premium" && (
+            {profile?.subscriptionType === "premium" && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -301,9 +301,9 @@ export default function PremiumPage() {
                     Subscription Management
                   </h2>
                   <span className={`px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                    user.subscriptionStatus === 'active' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-orange-500/10 text-orange-500 border border-orange-500/20'
+                    profile?.subscriptionStatus === 'active' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-orange-500/10 text-orange-500 border border-orange-500/20'
                   }`}>
-                    {user.subscriptionStatus}
+                    {profile?.subscriptionStatus}
                   </span>
                 </div>
 
@@ -311,7 +311,7 @@ export default function PremiumPage() {
                   <div className="p-6 rounded-2xl bg-zinc-950/50 border border-zinc-800/50 space-y-2">
                     <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest">Next Renewal</p>
                     <p className="text-xl font-bold text-white">
-                      {user.subscriptionEnd ? new Date(user.subscriptionEnd).toLocaleDateString() : 'N/A'}
+                      {profile?.subscriptionEnd ? new Date(profile.subscriptionEnd).toLocaleDateString() : 'N/A'}
                     </p>
                   </div>
                   <div className="p-6 rounded-2xl bg-zinc-950/50 border border-zinc-800/50 space-y-2">
@@ -321,7 +321,7 @@ export default function PremiumPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-4">
-                  {user.subscriptionStatus === 'active' ? (
+                  {profile?.subscriptionStatus === 'active' ? (
                     <button
                       onClick={handleCancelSubscription}
                       disabled={loading}
@@ -466,12 +466,12 @@ export default function PremiumPage() {
 
               <button
                 onClick={handleUpgrade}
-                disabled={loading || user?.subscriptionType === "premium"}
+                disabled={loading || profile?.subscriptionType === "premium"}
                 className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-lg"
               >
                 {loading ? (
                   <Loader2 className="w-6 h-6 animate-spin" />
-                ) : user?.subscriptionType === "premium" ? (
+                ) : profile?.subscriptionType === "premium" ? (
                   "Currently Subscribed"
                 ) : (
                   "Upgrade Now"
