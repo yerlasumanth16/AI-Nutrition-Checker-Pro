@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "../../../../lib/firebase-admin";
 import { verifyToken } from "../../../../lib/auth";
-import crypto from "crypto";
+import { cashfree } from "../../../../lib/cashfree";
 
 export async function POST(req: Request) {
   try {
@@ -17,45 +17,80 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401 });
     }
 
-    const { razorpay_payment_id, razorpay_subscription_id, razorpay_signature } = await req.json();
+    const { orderId } = await req.json();
 
-    // Verify signature
-    const secret = process.env.RAZORPAY_KEY_SECRET || "";
-    const generated_signature = crypto
-      .createHmac("sha256", secret)
-      .update(razorpay_payment_id + "|" + razorpay_subscription_id)
-      .digest("hex");
-
-    if (generated_signature !== razorpay_signature) {
-      return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 });
+    if (!orderId) {
+      return NextResponse.json({ error: "Order ID is required" }, { status: 400 });
     }
 
-    // Update user status in Firestore
-    const userRef = adminDb.collection("users").doc(decoded.userId);
-    await userRef.update({
-      subscriptionType: "premium",
-      subscriptionId: razorpay_subscription_id,
-      subscriptionStatus: "active",
-      subscriptionStart: new Date().toISOString(),
-      subscriptionEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    });
+    // Verify order status with Cashfree
+    const orderResponse = await cashfree.PGFetchOrder(orderId);
+    const orderData = orderResponse.data;
 
-    // Record payment in Firestore
-    await adminDb.collection("payments").add({
-      userId: decoded.userId,
-      razorpayPaymentId: razorpay_payment_id,
-      razorpayOrderId: razorpay_subscription_id,
-      razorpaySignature: razorpay_signature,
-      amount: 15,
-      currency: "INR",
-      status: "captured",
-      planType: "Premium Nutrition Pro",
-      createdAt: new Date().toISOString(),
-    });
+    if (!orderData) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
 
-    return NextResponse.json({ success: true });
+    // Get payments for this order
+    const paymentsResponse = await cashfree.PGOrderFetchPayments(orderId);
+    const payments = paymentsResponse.data || [];
+
+    // Find successful payment
+    const successfulPayment = payments.find(
+      (p: any) => p.payment_status === "SUCCESS"
+    );
+
+    if (orderData.order_status === "PAID" && successfulPayment) {
+      // Update user status in Firestore
+      const userRef = adminDb.collection("users").doc(decoded.userId);
+      await userRef.update({
+        subscriptionType: "premium",
+        subscriptionId: orderId,
+        subscriptionStatus: "active",
+        subscriptionStart: new Date().toISOString(),
+        subscriptionEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+
+      // Record payment in Firestore
+      await adminDb.collection("payments").add({
+        userId: decoded.userId,
+        cashfreeOrderId: orderId,
+        cashfreePaymentId: successfulPayment.cf_payment_id,
+        paymentMethod: successfulPayment.payment_method?.type || "unknown",
+        amount: orderData.order_amount,
+        currency: orderData.order_currency,
+        status: "captured",
+        planType: "Premium Nutrition Pro",
+        createdAt: new Date().toISOString(),
+      });
+
+      // Update order status
+      await adminDb.collection("orders").doc(orderId).update({
+        status: "paid",
+        paymentId: successfulPayment.cf_payment_id,
+        paymentMethod: successfulPayment.payment_method?.type,
+        paidAt: new Date().toISOString(),
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: "Payment verified successfully",
+      });
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        status: orderData.order_status,
+        message: "Payment not completed",
+      },
+      { status: 400 }
+    );
   } catch (error: any) {
     console.error("Verify subscription error:", error);
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Internal server error" },
+      { status: 500 }
+    );
   }
 }

@@ -1,10 +1,34 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Check, Loader2, Sparkles, Shield, Zap, BarChart3, FileText, Calendar, CreditCard, Clock, XCircle, RefreshCw } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { 
+  Check, 
+  Loader2, 
+  Sparkles, 
+  Shield, 
+  Zap, 
+  BarChart3, 
+  FileText, 
+  Calendar, 
+  CreditCard, 
+  Clock, 
+  XCircle, 
+  RefreshCw,
+  Smartphone,
+  Wallet,
+  Building2,
+  Landmark,
+  BadgePercent
+} from "lucide-react";
 import { useAuth } from "../../lib/AuthContext";
-import { motion, AnimatePresence } from "motion/react";
-import { useRouter } from "next/navigation";
+import { motion } from "motion/react";
+import { useRouter, useSearchParams } from "next/navigation";
+
+declare global {
+  interface Window {
+    Cashfree: any;
+  }
+}
 
 export default function PremiumPage() {
   const { user, firebaseUser, getIdToken } = useAuth();
@@ -13,7 +37,9 @@ export default function PremiumPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -32,6 +58,48 @@ export default function PremiumPage() {
       fetchPaymentHistory();
     }
   }, [user, token]);
+
+  // Handle return from payment
+  useEffect(() => {
+    const orderId = searchParams.get("order_id");
+    const paymentStatus = searchParams.get("payment_status");
+
+    if (orderId && token) {
+      if (paymentStatus === "SUCCESS") {
+        verifyPayment(orderId);
+      } else if (paymentStatus === "FAILED") {
+        setError("Payment failed. Please try again.");
+      }
+    }
+  }, [searchParams, token]);
+
+  const verifyPayment = async (orderId: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/premium/verify-subscription", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ orderId }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMessage("Payment successful! Welcome to Premium!");
+        setTimeout(() => {
+          router.push("/dashboard?premium=success");
+        }, 2000);
+      } else {
+        setError(data.message || "Payment verification failed");
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchPaymentHistory = async () => {
     setHistoryLoading(true);
@@ -63,7 +131,8 @@ export default function PremiumPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        alert("Subscription cancelled successfully.");
+        alert(data.message || "Subscription cancelled successfully.");
+        router.refresh();
       } else {
         throw new Error(data.error);
       }
@@ -74,19 +143,22 @@ export default function PremiumPage() {
     }
   };
 
+  // Load Cashfree SDK
   useEffect(() => {
     const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
     script.async = true;
     document.body.appendChild(script);
     return () => {
-      document.body.removeChild(script);
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
     };
   }, []);
 
   const handleUpgrade = async () => {
     if (!user) {
-      // Trigger login modal or redirect to login
+      setError("Please log in to upgrade to Premium");
       return;
     }
 
@@ -94,7 +166,7 @@ export default function PremiumPage() {
     setError(null);
 
     try {
-      // 1. Create subscription on backend
+      // 1. Create order on backend
       const res = await fetch("/api/premium/create-subscription", {
         method: "POST",
         headers: {
@@ -104,53 +176,30 @@ export default function PremiumPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to initiate subscription");
+      if (!res.ok) throw new Error(data.error || "Failed to create order");
 
-      // 2. Open Razorpay Checkout
-      const options = {
-        key: data.keyId,
-        subscription_id: data.subscriptionId,
-        name: "NutriAI Premium",
-        description: "Premium Nutrition Pro - ₹15/month",
-        image: "https://picsum.photos/seed/nutriai/200/200",
-        handler: async function (response: any) {
-          // 3. Verify payment on backend
-          try {
-            const verifyRes = await fetch("/api/premium/verify-subscription", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_subscription_id: response.razorpay_subscription_id,
-                razorpay_signature: response.razorpay_signature,
-              }),
-            });
+      // 2. Initialize Cashfree
+      const cashfree = window.Cashfree({
+        mode: data.environment === "PRODUCTION" ? "production" : "sandbox",
+      });
 
-            const verifyData = await verifyRes.json();
-            if (verifyRes.ok) {
-              // Update local auth state
-              router.push("/dashboard?premium=success");
-            } else {
-              throw new Error(verifyData.error || "Payment verification failed");
-            }
-          } catch (err: any) {
-            setError(err.message);
-          }
-        },
-        prefill: {
-          name: user.name,
-          email: user.email,
-        },
-        theme: {
-          color: "#10b981", // emerald-500
-        },
+      // 3. Open Cashfree Checkout with all payment methods
+      const checkoutOptions = {
+        paymentSessionId: data.paymentSessionId,
+        redirectTarget: "_modal", // Opens in modal instead of redirect
       };
 
-      const rzp = new (window as any).Razorpay(options);
-      rzp.open();
+      const result = await cashfree.checkout(checkoutOptions);
+
+      if (result.error) {
+        // Payment was cancelled or failed
+        if (result.error.message) {
+          setError(result.error.message);
+        }
+      } else if (result.paymentDetails) {
+        // Payment completed - verify on backend
+        await verifyPayment(data.orderId);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -165,6 +214,15 @@ export default function PremiumPage() {
     { icon: Zap, title: "AI Diet Planning", desc: "Personalized meal plans generated by our advanced AI models." },
     { icon: Calendar, title: "Long-term Tracking", desc: "Keep your health history forever with unlimited data storage." },
     { icon: Shield, title: "Priority Support", desc: "Get faster responses from our health and technical experts." },
+  ];
+
+  const paymentMethods = [
+    { icon: CreditCard, name: "Credit/Debit Cards", desc: "Visa, Mastercard, RuPay" },
+    { icon: Smartphone, name: "UPI", desc: "Google Pay, PhonePe, Paytm" },
+    { icon: Landmark, name: "Net Banking", desc: "All major banks" },
+    { icon: Wallet, name: "Wallets", desc: "Amazon Pay, Mobikwik, etc." },
+    { icon: BadgePercent, name: "Pay Later", desc: "Simpl, LazyPay, ZestMoney" },
+    { icon: Building2, name: "EMI", desc: "No-cost EMI options" },
   ];
 
   return (
@@ -204,6 +262,32 @@ export default function PremiumPage() {
                 </motion.div>
               ))}
             </div>
+
+            {/* Payment Methods Section */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-8"
+            >
+              <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                <CreditCard className="text-emerald-500" />
+                Accepted Payment Methods
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {paymentMethods.map((method, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-3 p-4 bg-zinc-950/50 border border-zinc-800/50 rounded-2xl"
+                  >
+                    <method.icon className="w-6 h-6 text-emerald-500 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium text-sm">{method.name}</p>
+                      <p className="text-xs text-zinc-500">{method.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
 
             {user?.subscriptionType === "premium" && (
               <motion.div
@@ -281,6 +365,7 @@ export default function PremiumPage() {
                     <tr className="border-b border-zinc-800">
                       <th className="pb-4 text-xs font-bold text-zinc-500 uppercase tracking-widest">Date</th>
                       <th className="pb-4 text-xs font-bold text-zinc-500 uppercase tracking-widest">Amount</th>
+                      <th className="pb-4 text-xs font-bold text-zinc-500 uppercase tracking-widest">Method</th>
                       <th className="pb-4 text-xs font-bold text-zinc-500 uppercase tracking-widest">Status</th>
                       <th className="pb-4 text-xs font-bold text-zinc-500 uppercase tracking-widest">Payment ID</th>
                     </tr>
@@ -288,21 +373,32 @@ export default function PremiumPage() {
                   <tbody className="divide-y divide-zinc-800/50">
                     {payments.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="py-8 text-center text-zinc-500 italic">No payment history found.</td>
+                        <td colSpan={5} className="py-8 text-center text-zinc-500 italic">No payment history found.</td>
                       </tr>
                     ) : (
                       payments.map((payment) => (
                         <tr key={payment.id} className="group">
                           <td className="py-4 text-sm text-zinc-300">{new Date(payment.createdAt).toLocaleDateString()}</td>
-                          <td className="py-4 text-sm font-bold text-white">₹{payment.amount}</td>
+                          <td className="py-4 text-sm font-bold text-white">
+                            {payment.amount < 0 ? '-' : ''}₹{Math.abs(payment.amount)}
+                          </td>
+                          <td className="py-4 text-sm text-zinc-400 capitalize">
+                            {payment.paymentMethod || 'N/A'}
+                          </td>
                           <td className="py-4 text-sm">
                             <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${
-                              payment.status === 'captured' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'
+                              payment.status === 'captured' 
+                                ? 'bg-emerald-500/10 text-emerald-500' 
+                                : payment.status === 'refunded'
+                                ? 'bg-orange-500/10 text-orange-500'
+                                : 'bg-red-500/10 text-red-500'
                             }`}>
                               {payment.status}
                             </span>
                           </td>
-                          <td className="py-4 text-sm text-zinc-500 font-mono">{payment.razorpayPaymentId || 'N/A'}</td>
+                          <td className="py-4 text-sm text-zinc-500 font-mono">
+                            {payment.cashfreePaymentId || payment.cashfreeRefundId || 'N/A'}
+                          </td>
                         </tr>
                       ))
                     )}
@@ -334,7 +430,7 @@ export default function PremiumPage() {
                   <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
                     <Check className="w-4 h-4 text-emerald-500" />
                   </div>
-                  <span className="text-zinc-300">Auto-renewing subscription</span>
+                  <span className="text-zinc-300">Pay with UPI, Cards, or Wallets</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
@@ -348,7 +444,19 @@ export default function PremiumPage() {
                   </div>
                   <span className="text-zinc-300">All premium features included</span>
                 </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                    <Check className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <span className="text-zinc-300">Secure payment via Cashfree</span>
+                </div>
               </div>
+
+              {successMessage && (
+                <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-500 text-sm">
+                  {successMessage}
+                </div>
+              )}
 
               {error && (
                 <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-500 text-sm">
@@ -370,9 +478,18 @@ export default function PremiumPage() {
                 )}
               </button>
               
-              <p className="text-center text-zinc-500 text-sm mt-6">
-                Secure payment via Razorpay. All major cards & UPI accepted.
-              </p>
+              <div className="mt-6 flex items-center justify-center gap-2 text-zinc-500 text-sm">
+                <Shield className="w-4 h-4" />
+                <span>Secure payment powered by Cashfree</span>
+              </div>
+
+              {/* Payment method icons */}
+              <div className="mt-4 flex items-center justify-center gap-4 text-zinc-600">
+                <CreditCard className="w-5 h-5" />
+                <Smartphone className="w-5 h-5" />
+                <Landmark className="w-5 h-5" />
+                <Wallet className="w-5 h-5" />
+              </div>
             </div>
           </motion.div>
         </div>
