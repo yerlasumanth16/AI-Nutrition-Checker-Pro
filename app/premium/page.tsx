@@ -157,7 +157,6 @@ export default function PremiumPage() {
   }, []);
 
   const handleUpgrade = async () => {
-    console.log("[v0] handleUpgrade called, user:", user?.id);
     if (!user) {
       setError("Please log in to upgrade to Premium");
       return;
@@ -167,7 +166,6 @@ export default function PremiumPage() {
     setError(null);
 
     try {
-      console.log("[v0] Creating order on backend...");
       // 1. Create order on backend
       const res = await fetch("/api/premium/create-subscription", {
         method: "POST",
@@ -178,10 +176,8 @@ export default function PremiumPage() {
       });
 
       const data = await res.json();
-      console.log("[v0] Order creation response:", data);
       if (!res.ok) throw new Error(data.error || "Failed to create order");
 
-      console.log("[v0] Initializing Cashfree SDK...");
       // 2. Initialize Cashfree
       const cashfree = window.Cashfree({
         mode: data.environment === "PRODUCTION" ? "production" : "sandbox",
@@ -193,23 +189,18 @@ export default function PremiumPage() {
         redirectTarget: "_modal", // Opens in modal instead of redirect
       };
 
-      console.log("[v0] Opening Cashfree checkout...");
       const result = await cashfree.checkout(checkoutOptions);
-      console.log("[v0] Checkout result:", result);
 
       if (result.error) {
         // Payment was cancelled or failed
-        console.log("[v0] Payment error:", result.error);
         if (result.error.message) {
           setError(result.error.message);
         }
       } else if (result.paymentDetails) {
         // Payment completed - verify on backend
-        console.log("[v0] Payment successful, verifying...");
         await verifyPayment(data.orderId);
       }
     } catch (err: any) {
-      console.error("[v0] Upgrade error:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -389,7 +380,7 @@ export default function PremiumPage() {
                         <tr key={payment.id} className="group">
                           <td className="py-4 text-sm text-zinc-300">{new Date(payment.createdAt).toLocaleDateString()}</td>
                           <td className="py-4 text-sm font-bold text-white">
-                            {payment.amount < 0 ? '-' : ''}₹{Math.abs(payment.amount)}
+                            {payment.amount < 0 ? '-' : ''}��{Math.abs(payment.amount)}
                           </td>
                           <td className="py-4 text-sm text-zinc-400 capitalize">
                             {payment.paymentMethod || 'N/A'}

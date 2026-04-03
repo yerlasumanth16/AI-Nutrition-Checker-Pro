@@ -430,7 +430,6 @@ export default function Home() {
     e?.preventDefault();
     if (!query.trim() && !image) return;
     
-    console.log("[v0] handleAnalyze called with query:", query, "image:", !!image);
     setLoading(true);
     setError(null);
     setAnalysis(null);
@@ -559,7 +558,6 @@ Required JSON structure:
         throw new Error("Failed to parse nutritional data");
       }
 
-      console.log("[v0] Analysis result:", result.foodName, "Score:", result.nutritionScore?.score);
       setAnalysis(result);
       
       // Cache the result in Firestore
