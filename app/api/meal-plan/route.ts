@@ -1,23 +1,8 @@
-import { generateText, Output } from "ai";
-import { z } from "zod";
+import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
-const MealSchema = z.object({
-  name: z.string(),
-  calories: z.number(),
-  protein: z.number(),
-  carbs: z.number(),
-  fat: z.number(),
-  ingredients: z.array(z.string()),
-  alternatives: z.array(z.string()),
-});
-
-const MealPlanSchema = z.object({
-  date: z.string(),
-  breakfast: MealSchema,
-  lunch: MealSchema,
-  dinner: MealSchema,
-  snacks: z.array(MealSchema),
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function POST(req: Request) {
@@ -28,6 +13,13 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "User profile is required" },
         { status: 400 }
+      );
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: "OpenAI API key not configured" },
+        { status: 500 }
       );
     }
 
@@ -47,24 +39,34 @@ Generate a 1-day personalized meal plan based on the following user profile:
 
 The plan should include Breakfast, Lunch, Dinner, and 2 Snacks.
 For each meal, provide name, calories, protein, carbs, fat, ingredients, and alternatives.
-Use the date: ${new Date().toISOString().split("T")[0]}
+
+Return ONLY valid JSON in this format:
+{
+  "date": "${new Date().toISOString().split("T")[0]}",
+  "breakfast": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "ingredients": string[], "alternatives": string[] },
+  "lunch": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "ingredients": string[], "alternatives": string[] },
+  "dinner": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "ingredients": string[], "alternatives": string[] },
+  "snacks": [
+    { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "ingredients": string[], "alternatives": string[] }
+  ]
+}
 `;
 
-    // Use Vercel AI Gateway with model string (AI SDK 6)
-    const result = await generateText({
-      model: "openai/gpt-4o-mini",
-      prompt,
-      output: Output.object({ schema: MealPlanSchema }),
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      max_tokens: 2000,
     });
 
-    if (result.object) {
-      return NextResponse.json(result.object);
-    } else {
-      return NextResponse.json(
-        { error: "Failed to generate meal plan" },
-        { status: 500 }
-      );
+    const text = response.choices[0]?.message?.content;
+    if (!text) {
+      return NextResponse.json({ error: "Empty response from AI" }, { status: 500 });
     }
+
+    const result = JSON.parse(text);
+    return NextResponse.json(result);
+
   } catch (error: any) {
     console.error("Meal plan error:", error);
     return NextResponse.json(

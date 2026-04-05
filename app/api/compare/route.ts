@@ -1,25 +1,8 @@
-import { generateText, Output } from "ai";
-import { z } from "zod";
+import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
-const FoodComparisonSchema = z.object({
-  food1: z.object({
-    name: z.string(),
-    calories: z.number(),
-    protein: z.number(),
-    carbs: z.number(),
-    fat: z.number(),
-    score: z.number(),
-  }),
-  food2: z.object({
-    name: z.string(),
-    calories: z.number(),
-    protein: z.number(),
-    carbs: z.number(),
-    fat: z.number(),
-    score: z.number(),
-  }),
-  recommendation: z.string(),
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function POST(req: Request) {
@@ -33,23 +16,37 @@ export async function POST(req: Request) {
       );
     }
 
-    const prompt = `Compare ${food1} vs ${food2}. Provide calories, protein, carbs, fat, and a health score (0-100) for each. Also give a recommendation on which is better for ${goal || "balanced diet"}.`;
-
-    // Use Vercel AI Gateway with model string (AI SDK 6)
-    const result = await generateText({
-      model: "openai/gpt-4o-mini",
-      prompt,
-      output: Output.object({ schema: FoodComparisonSchema }),
-    });
-
-    if (result.object) {
-      return NextResponse.json(result.object);
-    } else {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "Failed to compare foods" },
+        { error: "OpenAI API key not configured" },
         { status: 500 }
       );
     }
+
+    const prompt = `Compare ${food1} vs ${food2}. Provide calories, protein, carbs, fat, and a health score (0-100) for each. Also give a recommendation on which is better for ${goal || "balanced diet"}.
+
+Return ONLY valid JSON in this format:
+{
+  "food1": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "score": number },
+  "food2": { "name": string, "calories": number, "protein": number, "carbs": number, "fat": number, "score": number },
+  "recommendation": string
+}`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      max_tokens: 1000,
+    });
+
+    const text = response.choices[0]?.message?.content;
+    if (!text) {
+      return NextResponse.json({ error: "Empty response from AI" }, { status: 500 });
+    }
+
+    const result = JSON.parse(text);
+    return NextResponse.json(result);
+
   } catch (error: any) {
     console.error("Compare error:", error);
     return NextResponse.json(

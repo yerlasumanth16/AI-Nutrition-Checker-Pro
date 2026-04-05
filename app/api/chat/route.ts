@@ -1,5 +1,9 @@
-import { generateText } from "ai";
+import OpenAI from "openai";
 import { NextResponse } from "next/server";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(req: Request) {
   try {
@@ -9,6 +13,13 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Message is required" },
         { status: 400 }
+      );
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: "OpenAI API key not configured" },
+        { status: 500 }
       );
     }
 
@@ -24,16 +35,21 @@ Fitness Level: ${profile?.fitnessLevel || "N/A"}
 Current Mode: ${activeMode?.toUpperCase() || "DIET"}
 User History Summary: ${history?.length || 0} meals tracked recently. Total calories today: ${dailyStats?.calories || 0}. Calories burned today: ${dailyStats?.caloriesBurned || 0}.
 
-Answer the user's question accurately and professionally. Provide specific advice based on their goal (${profile?.goal || "balanced"}) and mode (${activeMode || "diet"}).`;
+Answer the user's question accurately and professionally. Provide specific advice based on their goal (${profile?.goal || "balanced"}) and mode (${activeMode || "diet"}).
+Keep responses concise but informative.`;
 
-    // Use Vercel AI Gateway with model string (AI SDK 6)
-    const result = await generateText({
-      model: "openai/gpt-4o-mini",
-      system: systemPrompt,
-      prompt: message,
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message }
+      ],
+      max_tokens: 1000,
     });
 
-    return NextResponse.json({ response: result.text });
+    const text = response.choices[0]?.message?.content;
+    return NextResponse.json({ response: text || "I'm sorry, I couldn't process that." });
+
   } catch (error: any) {
     console.error("Chat error:", error);
     return NextResponse.json(

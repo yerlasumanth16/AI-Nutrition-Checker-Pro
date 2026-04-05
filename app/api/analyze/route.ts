@@ -1,67 +1,8 @@
-import { generateText, Output } from "ai";
-import { z } from "zod";
+import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
-// Schema for the nutrition analysis response
-const NutritionAnalysisSchema = z.object({
-  foodName: z.string(),
-  portionEstimation: z.string(),
-  analysisDate: z.string(),
-  nutritionScore: z.object({
-    score: z.number(),
-    level: z.string(),
-    explanation: z.string(),
-  }),
-  macronutrients: z.array(
-    z.object({
-      name: z.string(),
-      value: z.number(),
-      unit: z.string(),
-      rdi: z.number(),
-      percentage: z.number(),
-      status: z.string(),
-    })
-  ),
-  micronutrients: z.array(
-    z.object({
-      name: z.string(),
-      value: z.number(),
-      unit: z.string(),
-      rdi: z.number(),
-      percentage: z.number(),
-      status: z.string(),
-    })
-  ),
-  risks: z.array(
-    z.object({
-      name: z.string(),
-      explanation: z.string(),
-      severity: z.string(),
-      consequences: z.string(),
-    })
-  ),
-  metabolicImpact: z.object({
-    glycemicImpact: z.string(),
-    energyDensity: z.string(),
-    metabolicLoad: z.string(),
-    nutrientDensityScore: z.number(),
-    analysis: z.string(),
-  }),
-  healthInsights: z.object({
-    weightManagement: z.string(),
-    muscleBuilding: z.string(),
-    heartHealth: z.string(),
-    diabetesSuitability: z.string(),
-    fitnessCompatibility: z.string(),
-  }),
-  clinicalSummary: z.string(),
-  expertFeatures: z.object({
-    mealRating: z.string(),
-    classification: z.string(),
-    longTermImpact: z.string(),
-    suggestions: z.array(z.string()),
-    alternatives: z.array(z.string()),
-  }),
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function POST(req: Request) {
@@ -75,8 +16,15 @@ export async function POST(req: Request) {
       );
     }
 
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: "OpenAI API key not configured. Please add OPENAI_API_KEY to your environment variables." },
+        { status: 500 }
+      );
+    }
+
     const prompt = `
-Analyze the following food item and return a comprehensive professional health-analysis diagnostic report.
+Analyze the following food item and return a comprehensive professional health-analysis diagnostic report in ONLY valid JSON format.
 The report must feel like a clinical nutrition document.
 
 User Profile:
@@ -89,48 +37,59 @@ User Profile:
 - Fitness Level: ${profile?.fitnessLevel || "N/A"}
 
 The user's current health goal is: ${profile?.goal || "balanced"}. 
-Current Mode: ${
-      activeMode === "gym"
-        ? "GYM/FITNESS (Focus on protein, recovery, muscle gain)"
-        : "DIET/HEALTH (Focus on weight loss, sugar/sodium control, fiber)"
-    }.
+Current Mode: ${activeMode === "gym" ? "GYM/FITNESS (Focus on protein, recovery, muscle gain)" : "DIET/HEALTH (Focus on weight loss, sugar/sodium control, fiber)"}.
 Tailor the analysis, risks, and suggestions to this specific context.
 
 Food item to analyze: ${query || "Food from image"}
+
+Required JSON structure:
+{
+  "foodName": string,
+  "portionEstimation": string,
+  "analysisDate": string (ISO format),
+  "nutritionScore": { "score": number (0-100), "level": string ("Excellent"/"Good"/"Fair"/"Poor"), "explanation": string },
+  "macronutrients": [ { "name": string, "value": number, "unit": string, "rdi": number, "percentage": number, "status": string ("optimal"/"high"/"low") } ],
+  "micronutrients": [ { "name": string, "value": number, "unit": string, "rdi": number, "percentage": number, "status": string } ],
+  "risks": [ { "name": string, "explanation": string, "severity": string ("low"/"medium"/"high"), "consequences": string } ],
+  "metabolicImpact": { "glycemicImpact": string, "energyDensity": string, "metabolicLoad": string, "nutrientDensityScore": number, "analysis": string },
+  "healthInsights": { "weightManagement": string, "muscleBuilding": string, "heartHealth": string, "diabetesSuitability": string, "fitnessCompatibility": string },
+  "clinicalSummary": string,
+  "expertFeatures": { "mealRating": string, "classification": string, "longTermImpact": string, "suggestions": string[], "alternatives": string[] }
+}
 `;
 
-    const messages: any[] = [];
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
 
     if (image) {
       messages.push({
         role: "user",
         content: [
           { type: "text", text: prompt },
-          { type: "image", image: image.data },
-        ],
+          { type: "image_url", image_url: { url: image.data } }
+        ]
       });
     } else {
       messages.push({
         role: "user",
-        content: prompt,
+        content: prompt
       });
     }
 
-    // Use Vercel AI Gateway with model string (AI SDK 6)
-    const result = await generateText({
-      model: "openai/gpt-4o-mini",
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
       messages,
-      output: Output.object({ schema: NutritionAnalysisSchema }),
+      response_format: { type: "json_object" },
+      max_tokens: 4000,
     });
 
-    if (result.object) {
-      return NextResponse.json(result.object);
-    } else {
-      return NextResponse.json(
-        { error: "Failed to parse AI response" },
-        { status: 500 }
-      );
+    const text = response.choices[0]?.message?.content;
+    if (!text) {
+      return NextResponse.json({ error: "Empty response from AI" }, { status: 500 });
     }
+
+    const result = JSON.parse(text);
+    return NextResponse.json(result);
+
   } catch (error: any) {
     console.error("Analysis error:", error);
     return NextResponse.json(
